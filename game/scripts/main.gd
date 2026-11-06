@@ -1388,7 +1388,7 @@ func do_plate(u: int, pid: int) -> void:
 	var it = g.get_item(u)
 	if it == null or it.where != null: return
 	if pid >= 0 and it.plate == pid: return
-	sfx("pop")
+	sfx("plate")
 	var fn := func():
 		var np := g.plate_put(u, pid)
 		W = {"area": "plate", "pid": np, "picks": []}
@@ -1478,7 +1478,7 @@ func work_go() -> void:
 		var join: bool = st.s != null
 		g.start_session(a.id, W.method, W.lv, W.T, its.is_empty(), join, its, _wvk())
 	W = {}
-	sfx("click")
+	sfx("door" if a.kind in ["oven", "micro", "chill"] else "click")
 	render_all()
 	act(10, "%s 세팅" % a.n, a.ic)
 
@@ -1844,7 +1844,7 @@ func do_prep(u: int, k: String) -> void:
 	for x in g.prep_list(it):
 		if x.k == k: p = x
 	if p == null: return
-	sfx("chop")
+	sfx("water" if k == "wash" else "chop")
 	var opts := {"emo": it.id}
 	if k == "wash": opts = {"wash": [it.id]}
 	act(p.t, "%s %s" % [D.ING[it.id].n, p.n], p.icn, func(): g.apply_prep(it, k), opts)
@@ -2011,6 +2011,7 @@ func take_back(aid: String) -> void:
 	var its: Array = st.s.items.duplicate()
 	g.finish_session(a, true)
 	g.events.clear()
+	if a.kind in ["oven", "micro", "chill"]: sfx("door")
 	render_all()
 	var st_node: Station = stations[aid]
 	var from := st_node.global_position + st_node.size / 2
@@ -2504,6 +2505,7 @@ func _process(delta: float) -> void:
 			if e.position.x < -70: e.position.x += 16 * 96.0
 		belt.queue_redraw()
 		title_lcd.modulate.a = 1.0 if fmod(t_now, 1.0) < 0.6 else 0.75
+	Sfx.ambient(_amb_want())
 	if act_state != null: _step_act()
 	elif screen == "play" or screen == "modal":
 		if g != null and clock_lbl and is_instance_valid(clock_lbl) and Game.LIMIT - g.now <= 300: update_clock()
@@ -2514,6 +2516,25 @@ func _process(delta: float) -> void:
 			final_left -= 1
 			auto_lbl.text = str(maxi(0, final_left))
 			if final_left <= 0: go_title()
+
+
+# 주방에서 돌아가는 기기 소리
+const AMB := {"grill": "sizzle", "stir": "sizzle", "fry": "fryer", "boil": "boil", "steam": "steam"}
+
+func _amb_want() -> Dictionary:
+	var w := {}
+	if g == null or g.over or not scr.game.visible: return w
+	for a in D.APPS:
+		var s = g.apps[a.id].s
+		if s == null: continue
+		match a.kind:
+			"stove":
+				if g.now < s.cookStart or s.items.is_empty(): w.flame = true
+				else: w[AMB.get(s.method, "flame")] = true
+			"oven": w.oven = true
+			"micro": w.micro = true
+			"blend": w.blender = true
+	return w
 
 
 func _input(e: InputEvent) -> void:
@@ -2586,6 +2607,8 @@ func _draw_menu() -> void:
 	add.call("play", "계속하기", "Esc", close_menu, "")
 	add.call("mute" if Sfx.muted else "sound", "효과음 %s" % ("꺼짐" if Sfx.muted else "켜짐"), "", func():
 		Sfx.muted = not Sfx.muted; _save_settings(); close_ov(); _draw_menu())
+	add.call("music" if Sfx.music_on else "music_off", "배경음악 %s" % ("켜짐" if Sfx.music_on else "꺼짐"), "", func():
+		Sfx.set_music(not Sfx.music_on); _save_settings(); close_ov(); _draw_menu())
 	var fs := DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN
 	add.call("full", "전체 화면 %s" % ("켜짐" if fs else "꺼짐"), "F11", func():
 		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_MAXIMIZED if fs else DisplayServer.WINDOW_MODE_FULLSCREEN); close_ov(); _draw_menu())
@@ -2606,12 +2629,16 @@ func close_menu() -> void:
 func _save_settings() -> void:
 	var c := ConfigFile.new()
 	c.set_value("audio", "muted", Sfx.muted)
+	c.set_value("audio", "music", Sfx.music_on)
 	c.save(SET_PATH)
 
 
 func _load_settings() -> void:
 	var c := ConfigFile.new()
-	if c.load(SET_PATH) == OK: Sfx.muted = bool(c.get_value("audio", "muted", false))
+	if c.load(SET_PATH) == OK:
+		Sfx.muted = bool(c.get_value("audio", "muted", false))
+		Sfx.music_on = bool(c.get_value("audio", "music", true))
+	Sfx.set_music(Sfx.music_on)
 
 
 func confirm_clear() -> void:
