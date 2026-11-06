@@ -26,13 +26,13 @@ var F_BL: Font
 var F_LCD: Font
 var F_NUM: Font
 
-const C_PAPER := Color("f2ede3")
-const C_PAPER2 := Color("e8e1d3")
-const C_CARD := Color("fbf8f2")
+const C_PAPER := Color("eceded")
+const C_PAPER2 := Color("dfe1e0")
+const C_CARD := Color("f8f8f6")
 const C_INK := Color("1d1b18")
 const C_INK2 := Color("3b3833")
 const C_MUTE := Color("7d766b")
-const C_LINE := Color("d3c9b8")
+const C_LINE := Color("cfd2d0")
 const C_ACCENT := Color("d9412a")
 const C_ACCENT2 := Color("b5321f")
 const C_OK := Color("2e7a47")

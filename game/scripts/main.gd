@@ -22,13 +22,11 @@ var blocker: Control
 
 # 타이틀
 var name_in: LineEdit
-var name_err: Label
 var title_rank: VBoxContainer
 var title_rank_h: HBoxContainer
 var belt: Control
 var belt_items: Array = []
 var belt_off := 0.0
-var title_lcd: Label
 
 # 재료 고르기
 var pk_grid: Control
@@ -43,7 +41,6 @@ var stations := {}
 var sink: Station
 var board: Control
 var acts: Panel
-var log_box: VBoxContainer
 var clock_lbl: Label
 var tbar_fill: Panel
 var w30: Button
@@ -53,11 +50,9 @@ var serve_btn: Button
 var note_btn: Button
 var k_icon: TextureRect
 var k_name: Label
-var k_desc: Label
 var busy_box: Control
 var busy_ic: TextureRect
 var busy_emo: TextureRect
-var busy_tx: Label
 var busy_t: Label
 var item_cards := {}
 var toast_y := 0
@@ -91,16 +86,16 @@ func make_theme() -> Theme:
 	var empty := StyleBoxEmpty.new()
 	# 기본 버튼 = 주 버튼 (빨강, 아래 턱이 있는 눌리는 버튼)
 	_btn_styles(t, "Button", D.C_ACCENT, Color("e0553d"), Color("9c2a17"), 10, 4)
-	_btn_styles(t, "Ghost", Color("fbf8f2"), Color.WHITE, Color("d3c8b5"), 10, 3, Color("e3dbcd"))
+	_btn_styles(t, "Ghost", Color("f8f8f6"), Color.WHITE, Color("c6c9c7"), 10, 3, Color("dcdedc"))
 	_btn_styles(t, "Key", Color("3a3631"), Color("46423c"), Color("141210"), 10, 3)
-	_btn_styles(t, "Mini", Color("fbf8f2"), Color.WHITE, Color("d3c8b5"), 10, 3, Color("e3dbcd"))
-	_btn_styles(t, "Soft", Color("f1ebe0"), Color("e7dfd0"), Color("dcd2c1"), 10, 2)
-	_btn_styles(t, "Pill", Color("f1ebe0"), Color("e7dfd0"), Color("dcd2c1"), 15, 2)
-	_btn_styles(t, "Opt", Color.WHITE, Color("f6f1e8"), Color("e3dbcd"), 12, 2, Color("e3dbcd"))
+	_btn_styles(t, "Mini", Color("f8f8f6"), Color.WHITE, Color("c6c9c7"), 10, 3, Color("dcdedc"))
+	_btn_styles(t, "Soft", Color("eceded"), Color("e2e4e3"), Color("d3d6d4"), 10, 2)
+	_btn_styles(t, "Pill", Color("eceded"), Color("e2e4e3"), Color("d3d6d4"), 15, 2)
+	_btn_styles(t, "Opt", Color.WHITE, Color("f2f3f2"), Color("dcdedc"), 12, 2, Color("dcdedc"))
 	_btn_styles(t, "OptOn", Color("fde6dd"), Color("fde6dd"), D.C_ACCENT, 12, 2, D.C_ACCENT)
 	t.set_type_variation("Flat", "Button")
 	for st in ["normal", "hover", "pressed", "disabled", "focus"]: t.set_stylebox(st, "Flat", empty)
-	var le := _sb(Color.WHITE, Color("d3c8b5"), 2, 12); le.content_margin_left = 18; le.content_margin_right = 18
+	var le := _sb(Color.WHITE, Color("c6c9c7"), 2, 12); le.content_margin_left = 18; le.content_margin_right = 18
 	t.set_stylebox("normal", "LineEdit", le)
 	var lf := _sb(Color(0, 0, 0, 0), D.C_ACCENT, 3, 12)
 	t.set_stylebox("focus", "LineEdit", lf)
@@ -221,7 +216,7 @@ func spacer() -> Control:
 func _fg(variant: String) -> Color:
 	if variant == "" : return Color.WHITE
 	if variant == "OptOn": return D.C_ACCENT2
-	if variant == "Key": return Color("f2ede3")
+	if variant == "Key": return Color("eceded")
 	return D.C_INK
 
 
@@ -379,13 +374,17 @@ func render_rank(box: VBoxContainer, head: HBoxContainer, hl_ts: int = -1) -> vo
 	head.add_child(ico("trophy", 26, D.C_INK))
 	head.add_child(lbl("TOP 10", 24, D.C_INK, D.F_BL))
 	head.add_child(spacer())
-	if list.size(): head.add_child(lbl("%d명 도전" % list.size(), 13, D.C_MUTE))
+	if list.size():
+		var cnt := lbl(str(list.size()), 14, D.C_MUTE, D.F_NUM)
+		cnt.tooltip_text = "도전 수"
+		cnt.mouse_filter = Control.MOUSE_FILTER_PASS
+		head.add_child(cnt)
 	clear(box)
 	if list.is_empty():
-		var e := lbl("첫 기록의 주인공이 되어 보세요", 16, D.C_MUTE)
-		e.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		e.custom_minimum_size = Vector2(0, 160)
-		box.add_child(e)
+		for i in 10:
+			var blank := _rank_row(false)
+			blank.get_child(0).add_child(lbl(str(i + 1), 18, D.C_LINE, D.F_NUM))
+			box.add_child(blank)
 		return
 	var rows := list.slice(0, 10)
 	var me := -1
@@ -395,15 +394,8 @@ func render_rank(box: VBoxContainer, head: HBoxContainer, hl_ts: int = -1) -> vo
 	if me >= 10: idxs = range(9) + [me]
 	for i in idxs:
 		var r: Dictionary = list[i]
-		var row := Panel.new()
-		row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		var st := _sb(Color("fbe3d9") if int(r.ts) == hl_ts else Color(0, 0, 0, 0), D.C_LINE, 0, 0)
-		st.border_width_bottom = 2
-		row.add_theme_stylebox_override("panel", st)
-		row.custom_minimum_size = Vector2(0, 42)
-		var h := hbox(10)
-		h.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		h.offset_left = 6; h.offset_right = -8
+		var row := _rank_row(int(r.ts) == hl_ts)
+		var h: HBoxContainer = row.get_child(0)
 		var rk := lbl(str(i + 1), 18, D.C_ACCENT if i < 3 else D.C_MUTE, D.F_NUM)
 		rk.custom_minimum_size = Vector2(34, 0)
 		h.add_child(rk)
@@ -418,8 +410,21 @@ func render_rank(box: VBoxContainer, head: HBoxContainer, hl_ts: int = -1) -> vo
 		sc.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		sc.custom_minimum_size = Vector2(44, 0)
 		h.add_child(sc)
-		row.add_child(h)
 		box.add_child(row)
+
+
+func _rank_row(hl: bool) -> Panel:
+	var row := Panel.new()
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var st := _sb(Color("fbe3d9") if hl else Color(0, 0, 0, 0), D.C_LINE, 0, 0)
+	st.border_width_bottom = 2
+	row.add_theme_stylebox_override("panel", st)
+	row.custom_minimum_size = Vector2(0, 42)
+	var h := hbox(10)
+	h.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	h.offset_left = 6; h.offset_right = -8
+	row.add_child(h)
+	return row
 
 
 # =====================================================================
@@ -428,56 +433,27 @@ func render_rank(box: VBoxContainer, head: HBoxContainer, hl_ts: int = -1) -> vo
 func build_title() -> void:
 	var r: Control = scr.title
 	var w1 := lbl("냉털", 96, D.C_INK, D.F_BL)
-	place(w1, 60, 34)
+	place(w1, 60, 100)
 	r.add_child(w1)
 	var w2 := lbl("셰프", 96, D.C_ACCENT, D.F_BL)
-	place(w2, 60, 128)
+	place(w2, 60, 194)
 	r.add_child(w2)
 	var lcd := lcd_box("30:00", 30, 150, 50)
-	place(lcd, 300, 168)
+	place(lcd, 300, 234)
 	r.add_child(lcd)
-	title_lcd = lcd.get_meta("lbl")
-	var tag := lbl("냉장고 재료로 30분 안에 한 접시", 19, D.C_INK2, D.F_XB)
-	place(tag, 64, 250)
-	r.add_child(tag)
-	# 흐름
-	var flow := Panel.new()
-	var fsb := _sb(D.C_CARD, Color(0, 0, 0, 0), 0, 16)
-	fsb.shadow_color = Color(0.25, 0.17, 0.08, 0.12); fsb.shadow_size = 12; fsb.shadow_offset = Vector2(0, 4)
-	flow.add_theme_stylebox_override("panel", fsb)
-	flow.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	place(flow, 64, 292, 600, 88)
-	r.add_child(flow)
-	var steps := [["fridge", "재료 고르기"], ["knife", "손질"], ["burner", "조리"], ["cloche", "제출"], ["bot", "AI 채점"]]
-	for i in steps.size():
-		var v := vbox(6)
-		v.alignment = BoxContainer.ALIGNMENT_CENTER
-		place(v, i * 120, 0, 120, 88)
-		var ic := ico(steps[i][0], 28, D.C_ACCENT)
-		ic.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-		v.add_child(ic)
-		var l := lbl(steps[i][1], 14, D.C_INK, D.F_BL)
-		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		v.add_child(l)
-		flow.add_child(v)
-		if i > 0:
-			var ln := ColorRect.new(); ln.color = Color("ebe4d6"); place(ln, i * 120, 18, 2, 52); flow.add_child(ln)
 	# 닉네임
 	name_in = LineEdit.new()
 	name_in.placeholder_text = "닉네임"
 	name_in.max_length = 10
 	name_in.context_menu_enabled = false
-	place(name_in, 64, 404, 456, 58)
+	place(name_in, 64, 346, 456, 58)
 	name_in.text_submitted.connect(func(_t): start_game())
-	name_in.text_changed.connect(func(_t): name_err.text = "")
 	r.add_child(name_in)
 	var sb := btn("play", "시작", "", "", Vector2(134, 58), 18)
-	place(sb, 530, 404)
+	sb.tooltip_text = "Enter"
+	place(sb, 530, 346)
 	sb.pressed.connect(start_game)
 	r.add_child(sb)
-	name_err = lbl("", 14, D.C_BAD, D.F_XB)
-	place(name_err, 66, 466, 400, 22)
-	r.add_child(name_err)
 	# 랭킹
 	title_rank_h = hbox(10)
 	place(title_rank_h, 728, 48, 488, 40)
@@ -500,10 +476,11 @@ func build_title() -> void:
 		place(e, i * 96.0, 22, 56, 56)
 		belt.add_child(e)
 		belt_items.append(e)
-	var foot := hbox(18)
-	place(foot, 64, 680, 600, 24)
-	foot.add_child(lbl("F11 전체화면", 12, D.C_MUTE))
-	r.add_child(foot)
+	var mb := btn("menu", "", "", "Ghost", Vector2(44, 44), 22)
+	mb.tooltip_text = "메뉴 Esc"
+	place(mb, 1172, 670)
+	mb.pressed.connect(open_menu)
+	r.add_child(mb)
 
 
 func _draw_belt() -> void:
@@ -529,7 +506,6 @@ func go_title() -> void:
 	render_rank(title_rank, title_rank_h)
 	if FileAccess.file_exists(NAME_PATH) and name_in.text == "":
 		name_in.text = FileAccess.get_file_as_string(NAME_PATH).strip_edges()
-	name_err.text = ""
 	name_in.grab_focus.call_deferred()
 	name_in.select_all.call_deferred()
 
@@ -538,7 +514,6 @@ func start_game() -> void:
 	if screen != "title" and screen != "final": return
 	var nm := name_in.text.strip_edges()
 	if nm == "":
-		name_err.text = "닉네임을 입력해 주세요"
 		name_in.grab_focus()
 		sfx("buzz")
 		var tw := name_in.create_tween()
@@ -565,9 +540,12 @@ func start_game() -> void:
 func build_pick() -> void:
 	var r: Control = scr.pick
 	var fridge_bg := ColorRect.new(); fridge_bg.color = Color("dde6ea"); place(fridge_bg, 0, 112, 1280, 608); r.add_child(fridge_bg)
-	# 선반
-	for k in [1, 2]:
-		var sh := ColorRect.new(); sh.color = Color("c3d2d9"); place(sh, 0, 112 + 18 + k * (181 + 12) - 7, 1280, 3); r.add_child(sh)
+	# 유리 선반
+	for k in [1, 2, 3]:
+		var sy: float = 112 + 18 + k * (181 + 12) - 12
+		var sh := ColorRect.new(); sh.color = Color("c3d2d9"); place(sh, 0, sy, 1280, 7); r.add_child(sh)
+		var hl := ColorRect.new(); hl.color = Color("f4f8fa"); place(hl, 0, sy, 1280, 2); r.add_child(hl)
+		var sd := ColorRect.new(); sd.color = Color(0.2, 0.3, 0.35, 0.1); place(sd, 0, sy + 7, 1280, 8); r.add_child(sd)
 	var top := panel(D.C_CARD)
 	place(top, 0, 0, 1280, 112)
 	r.add_child(top)
@@ -577,18 +555,13 @@ func build_pick() -> void:
 	pk_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	pk_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	place(pk_icon, 28, 24, 64, 64)
+	pk_icon.tooltip_text = "오늘의 주제"
 	r.add_child(pk_icon)
-	var chip := panel(D.C_INK, D.C_INK, 0, 3)
-	place(chip, 108, 14, 84, 22)
-	var cl := lbl("오늘의 주제", 12, Color.WHITE, D.F_BL); cl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	cl.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	chip.add_child(cl)
-	r.add_child(chip)
 	pk_name = lbl("", 34, D.C_INK, D.F_BL)
-	place(pk_name, 106, 34, 700, 44)
+	place(pk_name, 106, 18, 700, 44)
 	r.add_child(pk_name)
 	pk_desc = lbl("", 16, D.C_MUTE, D.F_XB)
-	place(pk_desc, 108, 78, 700, 24)
+	place(pk_desc, 108, 64, 700, 24)
 	r.add_child(pk_desc)
 	var nb := btn("book", "", "", "Ghost", Vector2(52, 52), 24)
 	nb.tooltip_text = "레시피 노트"
@@ -601,10 +574,11 @@ func build_pick() -> void:
 	pk_cnt.mouse_filter = Control.MOUSE_FILTER_PASS
 	pk_cnt.tooltip_text = "고른 재료"
 	r.add_child(pk_cnt)
-	var gl := lbl("개", 15, D.C_MUTE, D.F_BL)
-	place(gl, 1058, 44, 20, 30)
+	var gl := ico("check", 20, D.C_MUTE, 3.0)
+	place(gl, 1060, 44)
 	r.add_child(gl)
-	pk_go = btn("play", "요리 시작", "Enter", "", Vector2(170, 56), 18)
+	pk_go = btn("play", "요리 시작", "", "", Vector2(170, 56), 18)
+	pk_go.tooltip_text = "Enter"
 	place(pk_go, 1090, 28)
 	pk_go.pressed.connect(begin_play)
 	r.add_child(pk_go)
@@ -612,16 +586,6 @@ func build_pick() -> void:
 	pk_grid.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	place(pk_grid, 0, 112, 1280, 608)
 	r.add_child(pk_grid)
-
-
-func _pick_style(on: bool, hover: bool) -> StyleBoxFlat:
-	if on:
-		var s := _sb(Color.WHITE, D.C_ACCENT, 4, 14)
-		s.shadow_color = Color(D.C_ACCENT, 0.3); s.shadow_size = 10; s.shadow_offset = Vector2(0, 4)
-		return s
-	var n := _sb(Color.WHITE if hover else Color("f8fbfc"), Color(0, 0, 0, 0), 0, 14)
-	n.shadow_color = Color(0.2, 0.3, 0.35, 0.18 if hover else 0.1); n.shadow_size = 10 if hover else 6; n.shadow_offset = Vector2(0, 3)
-	return n
 
 
 func render_pick(pop: bool = false) -> void:
@@ -636,30 +600,34 @@ func render_pick(pop: bool = false) -> void:
 		b.theme_type_variation = "Flat"
 		b.focus_mode = Control.FOCUS_NONE
 		b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-		b.add_theme_stylebox_override("normal", _pick_style(on, false))
-		b.add_theme_stylebox_override("hover", _pick_style(on, true))
-		b.add_theme_stylebox_override("pressed", _pick_style(on, true))
 		place(b, 28 + (i % 6) * (cw + 12), 18 + (i / 6) * (ch + 12), cw, ch)
-		var v := vbox(2)
-		v.alignment = BoxContainer.ALIGNMENT_CENTER
-		v.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		var e := emo(id, 72)
-		e.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-		v.add_child(e)
-		var nl := lbl(it.n, 19, D.C_INK, D.F_BL); nl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		v.add_child(nl)
 		var tags := []
 		var tv: Array = []
 		for k in it.t:
 			if float(it.t[k]) > 0: tv.append([k, float(it.t[k])])
 		tv.sort_custom(func(a, c): return a[1] > c[1])
 		for x in tv.slice(0, 2): tags.append("#" + D.TAGN[x[0]])
-		var tl := lbl(" ".join(tags), 12, D.C_MUTE, D.F_XB); tl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		v.add_child(tl)
-		b.add_child(v)
+		b.tooltip_text = "%s  %s" % [it.n, " ".join(tags)]
+		# 선반 위에 그대로 놓인 재료
+		var foot := Vector2(cw / 2, ch - 20)
+		b.draw.connect(func():
+			b.draw_set_transform(foot, 0, Vector2(1, 0.22))
+			if on:
+				b.draw_circle(Vector2.ZERO, 66, Color(D.C_ACCENT, 0.25))
+				b.draw_arc(Vector2.ZERO, 66, 0, TAU, 48, D.C_ACCENT, 5.0, true)
+			elif b.is_hovered():
+				b.draw_arc(Vector2.ZERO, 66, 0, TAU, 48, Color(D.C_ACCENT, 0.5), 4.0, true)
+			b.draw_circle(Vector2.ZERO, 44, Color(0.2, 0.3, 0.35, 0.28))
+			b.draw_set_transform(Vector2.ZERO))
+		b.mouse_entered.connect(b.queue_redraw)
+		b.mouse_exited.connect(b.queue_redraw)
+		var ey := ch - 118 - (10 if on else 0)
+		var e := emo(id, 104)
+		place(e, (cw - 104) / 2, ey, 104, 104)
+		b.add_child(e)
 		if on:
-			var ck := panel(D.C_ACCENT, D.C_ACCENT, 0, 3)
-			place(ck, cw - 36, 10, 26, 26)
+			var ck := panel(D.C_ACCENT, D.C_ACCENT, 0, 13)
+			place(ck, cw / 2 + 34, ey - 2, 26, 26)
 			var ci := ico("check", 18, Color.WHITE, 3.0); place(ci, 4, 4)
 			ck.add_child(ci)
 			b.add_child(ck)
@@ -709,7 +677,6 @@ func begin_play() -> void:
 # 주방 (도면 kitchen_layout.png 좌표 그대로)
 # =====================================================================
 const FLOOR := Rect2(276, 273, 727, 447)
-const C_FLOORTXT := Color("9a8f7c")
 const LAYOUT := {
 	"cooktop": Rect2(34, 26, 214, 210), "sink": Rect2(289, 52, 226, 146), "board": Rect2(554, 52, 192, 148), "work": Rect2(764, 30, 470, 196),
 	"freeze": Rect2(32, 270, 206, 151), "bowl": Rect2(80, 490, 110, 110),
@@ -762,13 +729,13 @@ func build_game() -> void:
 	k_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	k_icon.texture = D.emo("theme%d" % g.theme_i)
 	place(k_icon, cx, 283, 30, 30)
+	k_icon.tooltip_text = g.theme.d
 	r.add_child(k_icon)
 	k_name = lbl(g.theme.n, 20, D.C_INK, D.F_BL)
-	place(k_name, cx + 38, 283, 300, 28)
+	place(k_name, cx + 38, 283, 480, 28)
+	k_name.tooltip_text = g.theme.d
+	k_name.mouse_filter = Control.MOUSE_FILTER_PASS
 	r.add_child(k_name)
-	k_desc = lbl(g.theme.d, 13, D.C_INK2, D.F_XB)
-	place(k_desc, cx + 50 + k_name.get_minimum_size().x, 289, 420, 20)
-	r.add_child(k_desc)
 	note_btn = btn("book", "", "", "Ghost", Vector2(44, 44), 22)
 	note_btn.tooltip_text = "레시피 노트"
 	place(note_btn, cx + cw - 44, 278)
@@ -807,12 +774,12 @@ func build_game() -> void:
 	w30 = btn("ff", "", "0:30", "Key", Vector2(66, 48), 16)
 	w30.tooltip_text = "30초 기다리기"
 	place(w30, bx, 7); bx += w30.size.x + 6
-	w30.pressed.connect(func(): act(30, "기다리는 중", "clock"))
+	w30.pressed.connect(func(): act(30, "clock"))
 	dev.add_child(w30)
 	w60 = btn("ff", "", "1:00", "Key", Vector2(66, 48), 16)
 	w60.tooltip_text = "1분 기다리기"
 	place(w60, bx, 7); bx += w60.size.x + 6
-	w60.pressed.connect(func(): act(60, "기다리는 중", "clock"))
+	w60.pressed.connect(func(): act(60, "clock"))
 	dev.add_child(w60)
 	wnext = btn("next", "", "--:--", "Key", Vector2(86, 48), 16)
 	wnext.tooltip_text = "다음 완료까지 기다리기"
@@ -831,10 +798,6 @@ func build_game() -> void:
 	acts.add_theme_stylebox_override("panel", asb)
 	place(acts, cx, PANEL_Y, cw, 720 - PANEL_Y - 10)
 	r.add_child(acts)
-	# 기록
-	log_box = vbox(2)
-	place(log_box, cx + 4, 632, cw - 8, 76)
-	r.add_child(log_box)
 	# 시간이 흐르는 동안
 	busy_box = Control.new()
 	busy_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -845,22 +808,18 @@ func build_game() -> void:
 	var bsb := _sb(Color("26231f"), Color(0, 0, 0, 0), 0, 18)
 	bsb.shadow_color = Color(0, 0, 0, 0.3); bsb.shadow_size = 18; bsb.shadow_offset = Vector2(0, 6)
 	bb.add_theme_stylebox_override("panel", bsb)
-	place(bb, (busy_box.size.x - 440) / 2, 100, 440, 108)
+	place(bb, (busy_box.size.x - 270) / 2, 100, 270, 92)
 	busy_box.add_child(bb)
 	busy_emo = emo("pork", 60)
-	place(busy_emo, 24, 24, 60, 60)
+	place(busy_emo, 16, 16, 60, 60)
 	bb.add_child(busy_emo)
 	busy_ic = ico("clock", 30, D.C_PAPER)
-	place(busy_ic, 98, 39)
+	place(busy_ic, 88, 31)
 	busy_ic.pivot_offset = Vector2(15, 15)
 	bb.add_child(busy_ic)
-	busy_tx = lbl("", 19, D.C_PAPER, D.F_BL)
-	place(busy_tx, 140, 24, 180, 60)
-	busy_tx.clip_text = true
-	bb.add_child(busy_tx)
 	busy_t = lbl("", 28, D.C_LCDTXT, D.F_LCD)
 	busy_t.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	place(busy_t, 310, 24, 106, 60)
+	place(busy_t, 130, 16, 124, 60)
 	bb.add_child(busy_t)
 
 
@@ -1000,12 +959,8 @@ func _wvk() -> String:
 func render_work() -> void:
 	clear(acts)
 	var area: String = W.get("area", "")
-	log_box.visible = area == ""
-	if area == "":
-		acts.self_modulate.a = 0.0
-		_hint_row(acts, [["burner", "기구 클릭"], ["in", "재료 넣기"], ["clock", "기다리기"], ["cloche", "제출"]], 70, C_FLOORTXT)
-		return
-	acts.self_modulate.a = 1.0
+	acts.visible = area != ""
+	if area == "": return
 	var v := vbox(6)
 	v.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	v.offset_left = 16; v.offset_right = -16; v.offset_top = 10; v.offset_bottom = -10
@@ -1068,12 +1023,8 @@ func _tool_tile(t: String, on: bool, locked: bool) -> Button:
 	tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	if t == "wok": tr.modulate = Color("b8b2aa")
 	tr.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	place(tr, 14, 3, 44, 34)
+	place(tr, 10, 4, 52, 48)
 	b.add_child(tr)
-	var l := lbl(D.TOOLS[t][0], 11, D.C_INK if on else D.C_MUTE, D.F_BL)
-	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	place(l, 0, 38, 72, 16)
-	b.add_child(l)
 	if locked and not on: dis(b, true)
 	elif not locked:
 		b.pressed.connect(func():
@@ -1102,7 +1053,6 @@ func _picker(v: VBoxContainer, tip: String) -> void:
 	fl.add_theme_constant_override("h_separation", 6)
 	fl.add_theme_constant_override("v_separation", 6)
 	fl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	var n := 0
 	for it in g.items:
 		if it.where != null or it.plate != null: continue
 		var on: bool = W.picks.has(it.uid)
@@ -1118,8 +1068,6 @@ func _picker(v: VBoxContainer, tip: String) -> void:
 		if not _pick_ok(it): dis(b, true)
 		else: b.pressed.connect(_toggle_pick.bind(it.uid))
 		fl.add_child(b)
-		n += 1
-	if n == 0: fl.add_child(lbl("조리대가 비었어요", 13, D.C_MUTE, D.F_XB))
 	h.add_child(fl)
 
 
@@ -1144,10 +1092,10 @@ func _work_setup(v: VBoxContainer) -> void:
 		for p in D.TOOLS[W.tool][1]:
 			r2.add_child(_chip_btn(D.PREPS[p][0], W.prep == p, join, func():
 				W.prep = p; W.method = D.COMBO["%s/%s" % [W.tool, p]][0]; sfx("click"); render_all()))
-		var sep := ColorRect.new(); sep.color = Color("e3dbcd"); sep.custom_minimum_size = Vector2(2, 30); sep.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		var sep := ColorRect.new(); sep.color = Color("dcdedc"); sep.custom_minimum_size = Vector2(2, 30); sep.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		r2.add_child(sep)
 		for m in D.COMBO[_wvk()]:
-			r2.add_child(_chip_btn(D.METH[m].n, W.method == m, false, func(): W.method = m; sfx("click"); render_all(), ico(D.METH[m].ic, 20)))
+			r2.add_child(_chip_btn("", W.method == m, false, func(): W.method = m; sfx("click"); render_all(), ico(D.METH[m].ic, 24), D.METH[m].n))
 	var r3 := _row(v, "flame" if a.kind == "stove" else ("micro" if a.kind == "micro" else "clock"), "세기와 시간")
 	if K.lv != null:
 		for L in K.lv:
@@ -1155,8 +1103,7 @@ func _work_setup(v: VBoxContainer) -> void:
 			if a.kind == "stove":
 				fl = hbox(0)
 				for q in (1 if L[0] == "low" else (2 if L[0] == "mid" else 3)): fl.add_child(ico("flame", 14, Color.WHITE))
-			r3.add_child(_chip_btn(L[1], W.lv == L[0], join, func(): W.lv = L[0]; sfx("click"); render_all(), fl))
-		var sp := Control.new(); sp.custom_minimum_size = Vector2(8, 0); r3.add_child(sp)
+			r3.add_child(_chip_btn("" if fl != null else L[1], W.lv == L[0], join, func(): W.lv = L[0]; sfx("click"); render_all(), fl, L[1]))
 	_time_row(r3, float(K.get("max", 1800)))
 	_picker(v, "넣을 재료")
 	v.add_child(spacer())
@@ -1165,15 +1112,15 @@ func _work_setup(v: VBoxContainer) -> void:
 	var pre := g.pre_for(a.id, vk, W.lv, join)
 	var f := hbox(10)
 	if pre > 0:
-		f.add_child(ico("thermo", 18, D.C_WARN))
-		f.add_child(lbl("%s %s" % [D.vk_pre_n(vk), D.fmt(pre)], 14, D.C_WARN, D.F_XB))
+		f.add_child(_tipico("thermo", D.vk_pre_n(vk), D.C_WARN))
+		f.add_child(lbl(D.fmt(pre), 15, D.C_WARN, D.F_NUM))
 	elif vk != "" and (st.hot == vk or join):
+		f.add_child(_tipico("thermo", "예열됨", D.C_OK))
 		f.add_child(ico("check", 18, D.C_OK))
-		f.add_child(lbl("예열됨", 14, D.C_OK, D.F_XB))
 	var its := _picks()
 	if its.size():
-		f.add_child(ico("clock", 18, D.C_INK))
-		f.add_child(lbl("%s 후 완료" % D.fmt(pre + W.T), 14, D.C_INK, D.F_XB))
+		f.add_child(_tipico("clock", "완료까지", D.C_INK))
+		f.add_child(lbl(D.fmt(pre + W.T), 15, D.C_INK, D.F_NUM))
 	f.add_child(spacer())
 	var ok: Button
 	if its.is_empty():
@@ -1197,11 +1144,12 @@ func _work_running(v: VBoxContainer) -> void:
 	_work_head(v, ico(a.ic, 26, D.C_INK), a.n, ex)
 	var info := hbox(8)
 	var stn: Station = stations[a.id]
-	info.add_child(ico("clock", 18, D.C_INK))
 	var how: String = D.METH[s.method].n
 	if D.KIND[a.kind].lv != null: how += " " + D.lv_name(a.kind, s.lv)
 	if a.kind == "stove": how = "%s %s" % [D.TOOLS[D.vk_tool(s.vk)][0], how]
-	info.add_child(lbl("%s  %s 남음" % [how, stn.timer], 15, D.C_INK, D.F_XB))
+	info.add_child(_tipico(D.METH[s.method].ic, how, D.C_INK))
+	info.add_child(_tipico("clock", "남은 시간", D.C_INK))
+	info.add_child(lbl(stn.timer, 15, D.C_INK, D.F_NUM))
 	v.add_child(info)
 	_picker(v, "더 넣을 재료")
 	v.add_child(spacer())
@@ -1232,7 +1180,7 @@ func _work_sink(v: VBoxContainer) -> void:
 		var fn := func():
 			for i in its: i.washed = true
 		sfx("click")
-		act(30 * its.size(), "씻기", "drop", fn, {"wash": ids}))
+		act(30 * its.size(), "drop", fn, {"wash": ids}))
 	f.add_child(ok)
 	v.add_child(f)
 
@@ -1247,7 +1195,7 @@ func _work_board(v: VBoxContainer) -> void:
 		var si := ico(s[0], 18, D.C_MUTE)
 		si.tooltip_text = s[1]; si.mouse_filter = Control.MOUSE_FILTER_PASS
 		ex.append(si)
-	if it.seas.size(): ex.append(lbl(" ".join(it.seas.map(func(x): return D.SEA[x].n)), 12, D.C_MUTE, D.F_XB))
+	if it.seas.size(): ex.append(_tipico("shaker", " ".join(it.seas.map(func(x): return D.SEA[x].n)), D.C_MUTE, 18))
 	var chip := panel(D.DCOL[d.cls], D.DCOL[d.cls], 0, 12)
 	var cl := lbl(d.label, 13, Color.WHITE, D.F_BL)
 	cl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -1270,23 +1218,24 @@ func _work_board(v: VBoxContainer) -> void:
 		b.pressed.connect(do_prep.bind(it.uid, p.k))
 		row.add_child(b)
 	if pl.size() and cl2.size():
-		var sep := ColorRect.new(); sep.color = Color("e3dbcd"); sep.custom_minimum_size = Vector2(2, 40); sep.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		var sep := ColorRect.new(); sep.color = Color("dcdedc"); sep.custom_minimum_size = Vector2(2, 40); sep.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		row.add_child(sep)
 	for p in cl2:
 		var b := _act_btn("c_" + p.k, p.n, D.fmt(p.t))
 		b.pressed.connect(do_cut.bind(it.uid, p.k))
 		row.add_child(b)
 	if pl.is_empty() and cl2.is_empty():
-		row.add_child(lbl("더 손질할 것 없음", 13, D.C_MUTE, D.F_XB))
+		row.add_child(_tipico("check", "손질 끝", D.C_OK))
 	var r3 := _row(v, "cloche", "접시에 담기")
-	var nb := btn("plus", "새 접시", "0:10", "Soft", Vector2(0, 40), 14)
+	var nb := btn("plus", "", "0:10", "Soft", Vector2(0, 40), 14)
+	nb.tooltip_text = "새 접시"
 	nb.pressed.connect(do_plate.bind(it.uid, -1))
 	r3.add_child(nb)
 	for pq in g.plates:
 		var pb := _plate_btn(pq)
 		pb.pressed.connect(do_plate.bind(it.uid, pq.pid))
 		r3.add_child(pb)
-	var r2 := _row(v, "shaker", "밑간 (최대 3개)")
+	var r2 := _row(v, "shaker", "밑간 최대 3개")
 	var grid := GridContainer.new()
 	grid.columns = 8
 	grid.add_theme_constant_override("h_separation", 5)
@@ -1357,10 +1306,6 @@ func _plate_token(pl: Dictionary, p: Vector2, cw: float, chh: float) -> void:
 		if n == 1: q = Vector2(cw / 2, 30) - Vector2(17, 17)
 		place(e, q.x, q.y, e.custom_minimum_size.x, e.custom_minimum_size.y)
 		b.add_child(e)
-	var nl := lbl("접시 %d" % pl.pid, 12, D.C_INK, D.F_BL)
-	nl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	place(nl, 0, 56, cw, 14)
-	b.add_child(nl)
 	b.tooltip_text = g.dish_name(its)
 	b.pressed.connect(open_plate.bind(pl.pid))
 	board.add_child(b)
@@ -1392,7 +1337,7 @@ func do_plate(u: int, pid: int) -> void:
 	var fn := func():
 		var np := g.plate_put(u, pid)
 		W = {"area": "plate", "pid": np, "picks": []}
-	act(10, "%s 접시에 담기" % D.ING[it.id].n, "cloche", fn, {"emo": it.id})
+	act(10, "cloche", fn, {"emo": it.id})
 
 
 func _work_board_pick(v: VBoxContainer) -> void:
@@ -1402,7 +1347,6 @@ func _work_board_pick(v: VBoxContainer) -> void:
 	fl.add_theme_constant_override("h_separation", 6)
 	fl.add_theme_constant_override("v_separation", 6)
 	fl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	var n := 0
 	for it in g.items:
 		if it.where != null or it.plate != null: continue
 		var b := Button.new()
@@ -1415,8 +1359,6 @@ func _work_board_pick(v: VBoxContainer) -> void:
 		var u: int = it.uid
 		b.pressed.connect(func(): W = {"area": "board", "uid": u, "picks": []}; sfx("pop"); render_all())
 		fl.add_child(b)
-		n += 1
-	if n == 0: fl.add_child(lbl("조리대가 비었어요", 13, D.C_MUTE, D.F_XB))
 	h.add_child(fl)
 
 
@@ -1424,8 +1366,8 @@ func _work_plate(v: VBoxContainer) -> void:
 	var pl = g.get_plate(W.pid)
 	if pl == null: W = {}; render_work(); return
 	var its := g.plate_items(pl)
-	_work_head(v, ico("cloche", 30, D.C_INK), "접시 %d" % pl.pid, [lbl(g.dish_name(its), 14, D.C_MUTE, D.F_XB)])
-	var h := _row(v, "cloche", "담긴 재료 (누르면 빼기)")
+	_work_head(v, ico("cloche", 30, D.C_INK), g.dish_name(its))
+	var h := _row(v, "cloche", "담긴 재료")
 	for it in its:
 		var b := Button.new()
 		b.theme_type_variation = "OptOn"
@@ -1437,12 +1379,11 @@ func _work_plate(v: VBoxContainer) -> void:
 		var u: int = it.uid
 		b.pressed.connect(func(): g.plate_take(u); sfx("click"); render_all())
 		h.add_child(b)
-	var h2 := _row(v, "plus", "더 담을 재료 (조리대 재료를 눌러도 됨)")
+	var h2 := _row(v, "plus", "더 담기")
 	var fl := HFlowContainer.new()
 	fl.add_theme_constant_override("h_separation", 6)
 	fl.add_theme_constant_override("v_separation", 6)
 	fl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	var n := 0
 	for it in g.items:
 		if it.where != null or it.plate != null: continue
 		var b := Button.new()
@@ -1454,8 +1395,6 @@ func _work_plate(v: VBoxContainer) -> void:
 		var e := emo(it.id, 36); place(e, 8, 6, 36, 36); b.add_child(e)
 		b.pressed.connect(do_plate.bind(it.uid, pl.pid))
 		fl.add_child(b)
-		n += 1
-	if n == 0: fl.add_child(lbl("조리대가 비었어요", 13, D.C_MUTE, D.F_XB))
 	h2.add_child(fl)
 
 
@@ -1480,7 +1419,7 @@ func work_go() -> void:
 	W = {}
 	sfx("door" if a.kind in ["oven", "micro", "chill"] else "click")
 	render_all()
-	act(10, "%s 세팅" % a.n, a.ic)
+	act(10, a.ic)
 
 
 # ---------- 렌더 ----------
@@ -1490,7 +1429,6 @@ func render_all() -> void:
 	render_counter()
 	render_work()
 	update_stations()
-	render_log()
 	render_top_btns()
 
 
@@ -1526,16 +1464,6 @@ func state_icons(it: Dictionary) -> Array:
 	if it.chill >= 480: s.append(["snow", "차가움"])
 	if it.mar >= 600: s.append(["bowl", "재움"])
 	return s
-
-
-func _card_style(sel: bool, hover: bool, away: bool) -> StyleBoxFlat:
-	if sel:
-		var s := _sb(Color.WHITE, D.C_ACCENT, 3, 12)
-		s.shadow_color = Color(D.C_ACCENT, 0.25); s.shadow_size = 6
-		return s
-	var b := _sb(Color.WHITE if hover else Color("fdfbf7"), Color("e3dbcd"), 2, 12)
-	if away: b.bg_color = Color("f1ece2"); b.border_color = Color("e3dbcd")
-	return b
 
 
 func _dish(it: Dictionary) -> String:
@@ -1579,12 +1507,6 @@ func _draw_token(b: Button, it: Dictionary) -> void:
 func render_counter() -> void:
 	clear(board)
 	item_cards.clear()
-	if g.items.is_empty():
-		var e := lbl("조리대가 비었어요", 16, Color("a8875a"), D.F_BL)
-		e.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		place(e, 0, 58, board.size.x, 40)
-		board.add_child(e)
-		return
 	var cw := 64.0
 	var chh := 72.0
 	# 뒷줄 날재료, 앞줄 손질(유리 볼) / 익힘(접시). 손질 중인 재료는 도마 위
@@ -1624,13 +1546,8 @@ func render_counter() -> void:
 		place(e, (cw - 40) / 2, 4 + lift, 40, 40)
 		if away: e.modulate.a = 0.3
 		b.add_child(e)
-		var nl := lbl(D.ING[it.id].n, 12, D.C_INK if not away else D.C_MUTE, D.F_BL)
-		nl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		nl.clip_text = true
-		place(nl, 0, 48, cw, 14)
-		b.add_child(nl)
 		var bar := panel(Color(0.4, 0.28, 0.12, 0.15), Color(0, 0, 0, 0), 0, 2)
-		place(bar, cw / 2 - 16, 65, 32, 4)
+		place(bar, cw / 2 - 16, 60, 32, 4)
 		b.add_child(bar)
 		var fill := panel(D.DCOL[d.cls], Color(0, 0, 0, 0), 0, 2)
 		place(fill, 0, 0, 32.0 * D.DW[d.cls] / 100.0, 4)
@@ -1666,22 +1583,6 @@ func refresh_bars() -> void:
 		fill.add_theme_stylebox_override("panel", _sb(D.DCOL[d.cls], Color(0, 0, 0, 0), 0, 2))
 
 
-func _hint_row(parent: Control, steps: Array, y: float, col: Color) -> void:
-	var h := hbox(16)
-	h.alignment = BoxContainer.ALIGNMENT_CENTER
-	place(h, 0, y, parent.size.x, 70)
-	for i in steps.size():
-		if i > 0: h.add_child(ico("next", 14, Color(col, 0.6)))
-		var v := vbox(4)
-		v.alignment = BoxContainer.ALIGNMENT_CENTER
-		var ic := ico(steps[i][0], 30, col); ic.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-		v.add_child(ic)
-		var l := lbl(steps[i][1], 13, col, D.F_BL); l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		v.add_child(l)
-		h.add_child(v)
-	parent.add_child(h)
-
-
 func _act_btn(icn: String, tip: String, t: String) -> Button:
 	var b := Button.new()
 	b.theme_type_variation = "Soft"
@@ -1691,13 +1592,11 @@ func _act_btn(icn: String, tip: String, t: String) -> Button:
 	var v := vbox(1)
 	v.alignment = BoxContainer.ALIGNMENT_CENTER
 	v.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	var i := ico(icn, 22, D.C_INK); i.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	var i := ico(icn, 24, D.C_INK); i.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	v.add_child(i)
-	var nm := lbl(tip, 12, D.C_INK, D.F_BL); nm.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	v.add_child(nm)
-	var l := lbl(t, 11, D.C_MUTE, D.F_NUM); l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var l := lbl(t, 13, D.C_MUTE, D.F_NUM); l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	v.add_child(l)
-	b.custom_minimum_size = Vector2(maxf(62, nm.get_combined_minimum_size().x + 14), 64)
+	b.custom_minimum_size = Vector2(56, 52)
 	b.add_child(v)
 	juice(b)
 	return b
@@ -1753,23 +1652,8 @@ func update_stations() -> void:
 	sink.queue_redraw()
 
 
-func render_log() -> void:
-	clear(log_box)
-	for i in mini(3, g.logs.size()):
-		var l: Dictionary = g.logs[i]
-		var h := hbox(10)
-		h.custom_minimum_size = Vector2(0, 20)
-		var tl := lbl(D.fmt(l.t), 13, C_FLOORTXT, D.F_NUM); tl.custom_minimum_size = Vector2(40, 0)
-		h.add_child(tl)
-		var el := lbl(l.text, 13, D.C_ACCENT if l.hl else D.C_INK2, D.F_XB)
-		el.clip_text = true; el.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		h.add_child(el)
-		h.modulate.a = 1.0 - i * 0.28
-		log_box.add_child(h)
-
-
 # ---------- 시간이 걸리는 행동 ----------
-func act(sec: float, label: String, icn: String, fn = null, opts: Dictionary = {}) -> void:
+func act(sec: float, icn: String, fn = null, opts: Dictionary = {}) -> void:
 	if busy or g == null or g.over or screen != "play": return
 	busy = true
 	var start := g.now
@@ -1778,7 +1662,7 @@ func act(sec: float, label: String, icn: String, fn = null, opts: Dictionary = {
 	busy_box.visible = true
 	blocker.visible = true
 	busy_ic.texture = D.icon(icn, 30)
-	busy_tx.text = label
+	busy_ic.position.x = 88 if opts.has("emo") else 52
 	busy_emo.visible = opts.has("emo")
 	if opts.has("emo"): busy_emo.texture = D.emo(opts.emo)
 	if opts.has("wash"):
@@ -1801,7 +1685,7 @@ func _step_act() -> void:
 		busy_ic.rotation = t_now * 6
 	else:
 		busy_ic.rotation = 0
-		busy_ic.position.y = 35 + sin(t_now * 14) * 3
+		busy_ic.position.y = 31 + sin(t_now * 14) * 3
 	update_clock()
 	update_stations()
 	refresh_bars()
@@ -1834,7 +1718,7 @@ func drain_events() -> void:
 
 func _wait_next() -> void:
 	var t := g.next_end()
-	if t < INF: act(ceil(t - g.now), "기다리는 중", "clock")
+	if t < INF: act(ceil(t - g.now), "clock")
 
 
 func do_prep(u: int, k: String) -> void:
@@ -1847,7 +1731,7 @@ func do_prep(u: int, k: String) -> void:
 	sfx("water" if k == "wash" else "chop")
 	var opts := {"emo": it.id}
 	if k == "wash": opts = {"wash": [it.id]}
-	act(p.t, "%s %s" % [D.ING[it.id].n, p.n], p.icn, func(): g.apply_prep(it, k), opts)
+	act(p.t, p.icn, func(): g.apply_prep(it, k), opts)
 
 
 func do_cut(u: int, c: String) -> void:
@@ -1858,7 +1742,7 @@ func do_cut(u: int, c: String) -> void:
 		if x.k == c: p = x
 	if p == null: return
 	sfx("chop")
-	act(p.t, "%s %s" % [D.ING[it.id].n, p.n], "c_" + c, func(): it.cut = c, {"emo": it.id})
+	act(p.t, "c_" + c, func(): it.cut = c, {"emo": it.id})
 
 
 func do_season(u: int, s: String) -> void:
@@ -1867,7 +1751,7 @@ func do_season(u: int, s: String) -> void:
 	sfx("click")
 	var fn := func():
 		if not it.seas.has(s): it.seas.append(s)
-	act(15, "%s %s 밑간" % [D.ING[it.id].n, D.SEA[s].n], "shaker", fn, {"emo": it.id})
+	act(15, "shaker", fn, {"emo": it.id})
 
 
 func fly(id: String, from: Vector2, to: Vector2, delay: float = 0.0) -> void:
@@ -1925,8 +1809,8 @@ func open_ov(content: Control) -> void:
 		content.pivot_offset = content.size / 2
 	content.resized.connect(center)
 	center.call()
-	content.scale = Vector2(0.96, 0.96)
-	content.create_tween().tween_property(content, "scale", Vector2.ONE, 0.14).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	content.modulate.a = 0.0
+	content.create_tween().tween_property(content, "modulate:a", 1.0, 0.1)
 
 
 func close_ov() -> void:
@@ -1958,8 +1842,9 @@ func opt_btn(icn_node: Control, text: String, on: bool, tip: String = "", w: flo
 		icn_node.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 		icn_node.modulate = D.C_ACCENT2 if on else D.C_INK
 		v.add_child(icn_node)
-	var l := lbl(text, 13, D.C_ACCENT2 if on else D.C_INK, D.F_XB); l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	v.add_child(l)
+	if text != "":
+		var l := lbl(text, 13, D.C_ACCENT2 if on else D.C_INK, D.F_XB); l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		v.add_child(l)
 	b.add_child(v)
 	juice(b)
 	return b
@@ -1987,8 +1872,8 @@ func _rl(c: Control) -> Control:
 
 
 func _minfo() -> Panel:
-	var p := panel(Color("f1ebe0"), Color(0, 0, 0, 0), 0, 10)
-	p.custom_minimum_size = Vector2(0, 44)
+	var p := panel(Color(0, 0, 0, 0))
+	p.custom_minimum_size = Vector2(0, 32)
 	var h := hbox(8)
 	h.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	h.offset_left = 12
@@ -2019,7 +1904,7 @@ func take_back(aid: String) -> void:
 		if item_cards.has(u):
 			var c: Control = item_cards[u]
 			fly(g.get_item(u).id, from, c.global_position + c.size / 2)
-	act(10, "%s 꺼내기" % a.n, "out")
+	act(10, "out")
 
 
 # ---------- 레시피 노트 ----------
@@ -2031,9 +1916,6 @@ func open_note() -> void:
 	place(h, 24, 16, 1172, 40)
 	h.add_child(ico("book", 28, D.C_INK))
 	h.add_child(lbl("레시피 노트", 24, D.C_INK, D.F_BL))
-	h.add_child(spacer())
-	h.add_child(ico("clock", 16, D.C_MUTE))
-	h.add_child(lbl("시간 소모 없음", 13, D.C_MUTE))
 	p.add_child(h)
 	var half := int(ceil(g.fridge.size() / 2.0))
 	for col in 2:
@@ -2042,14 +1924,16 @@ func open_note() -> void:
 		for ix in range(col * half, mini(g.fridge.size(), (col + 1) * half)):
 			v.add_child(_note_row(g.fridge[ix]))
 		p.add_child(v)
-	var lg := hbox(18)
+	var lg := hbox(8)
 	place(lg, 24, 640, 900, 30)
-	lg.add_child(lbl("중불 / 200° 기준", 13, D.C_MUTE))
-	lg.add_child(ico("flame", 14, D.C_MUTE)); lg.add_child(lbl("강불 1.5배 빠름", 13, D.C_MUTE))
-	lg.add_child(ico("flame", 14, D.C_MUTE)); lg.add_child(lbl("약불 0.6배", 13, D.C_MUTE))
-	lg.add_child(ico("c_M", 14, D.C_MUTE)); lg.add_child(lbl("잘게 썰수록 빨리 익음", 13, D.C_MUTE))
+	for x in [[1, "x0.6", "약불 0.6배"], [2, "x1", "중불, 오븐 200° 기준"], [3, "x1.5", "강불 1.5배"]]:
+		var fl := []
+		for q in x[0]: fl.append(ico("flame", 14, D.C_MUTE))
+		lg.add_child(_chip(fl, x[1], D.C_MUTE, x[2]))
+	lg.add_child(_chip([ico("c_M", 18, D.C_MUTE)], "", D.C_MUTE, "잘게 썰수록 빨리 익음"))
 	p.add_child(lg)
-	var cb := btn("x", "닫기", "Esc", "Ghost", Vector2(0, 44), 18)
+	var cb := btn("x", "", "", "Ghost", Vector2(44, 44), 18)
+	cb.tooltip_text = "닫기 Esc"
 	place(cb, 1220 - 24 - cb.size.x, 632)
 	cb.pressed.connect(func(): close_ov(); screen = back)
 	p.add_child(cb)
@@ -2082,7 +1966,7 @@ func _note_row(id: String) -> Control:
 	for m in tab:
 		if float(tab[m][0]) >= 2: ms.append([m, tab[m]])
 	ms.sort_custom(func(x, y): return float(x[1][0]) > float(y[1][0]))
-	if float(gi.raw) >= 2: h.add_child(_chip([ico("m_raw", 18, D.C_OK)], "생", D.C_OK, "생으로 먹어도 좋아요"))
+	if float(gi.raw) >= 2: h.add_child(_chip([ico("m_raw", 18, D.C_OK)], "생", D.C_OK, "생으로 가능"))
 	for x in ms.slice(0, 3):
 		var m: String = x[0]
 		var d: Array = x[1]
@@ -2095,8 +1979,8 @@ func _note_row(id: String) -> Control:
 	return row
 
 
-func _tipico(n: String, tip: String) -> TextureRect:
-	var i := ico(n, 20, D.C_INK2)
+func _tipico(n: String, tip: String, col: Color = D.C_INK2, sz: int = 20) -> TextureRect:
+	var i := ico(n, sz, col)
 	i.tooltip_text = tip
 	i.mouse_filter = Control.MOUSE_FILTER_PASS
 	return i
@@ -2137,10 +2021,8 @@ func _draw_serve() -> void:
 	var p: PanelContainer = pv[0]
 	var v: VBoxContainer = pv[1]
 	var h := hbox(10)
-	h.add_child(ico("cloche", 30, D.C_INK))
+	h.add_child(_tipico("cloche", "접시 없이 고른 재료는 한 접시로", D.C_INK, 30))
 	h.add_child(lbl("플레이팅", 24, D.C_INK, D.F_BL))
-	h.add_child(spacer())
-	h.add_child(lbl("접시 없이 고른 재료는 한 접시에 함께 담김", 13, D.C_MUTE, D.F_XB))
 	v.add_child(h)
 	var grid := GridContainer.new()
 	grid.columns = 6
@@ -2149,21 +2031,7 @@ func _draw_serve() -> void:
 	for pl in g.plates:
 		var pits := g.plate_items(pl)
 		var pon: bool = pl.uids.all(func(u): return serve_pick.has(u))
-		var pbt := Button.new()
-		pbt.theme_type_variation = "Flat"
-		pbt.focus_mode = Control.FOCUS_NONE
-		pbt.custom_minimum_size = Vector2(112, 96)
-		pbt.add_theme_stylebox_override("normal", _card_style(pon, false, false))
-		pbt.add_theme_stylebox_override("hover", _card_style(pon, true, false))
-		pbt.add_theme_stylebox_override("pressed", _card_style(pon, true, false))
-		var pn := mini(4, pits.size())
-		for k in pn:
-			var e := emo(pits[k].id, 30); place(e, 56 - pn * 13 + k * 26 - 2, 12, 30, 30); pbt.add_child(e)
-		var pnl := lbl("접시 %d" % pl.pid, 13, D.C_INK, D.F_BL); pnl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; place(pnl, 2, 52, 108, 18); pbt.add_child(pnl)
-		pbt.tooltip_text = g.dish_name(pits)
-		if pon:
-			var ck := panel(D.C_ACCENT, D.C_ACCENT, 0, 2); place(ck, 90, 4, 18, 18)
-			var ci := ico("check", 14, Color.WHITE, 3.0); place(ci, 2, 2); ck.add_child(ci); pbt.add_child(ck)
+		var pbt := _serve_spot(pits.map(func(i): return i.id), pon, false, g.dish_name(pits))
 		var puids: Array = pl.uids.duplicate()
 		pbt.pressed.connect(func():
 			for u in puids:
@@ -2176,23 +2044,9 @@ func _draw_serve() -> void:
 		var on := serve_pick.has(it.uid)
 		var away = it.where != null
 		var d := g.doneness(it)
-		var b := Button.new()
-		b.theme_type_variation = "Flat"
-		b.focus_mode = Control.FOCUS_NONE
-		b.custom_minimum_size = Vector2(112, 96)
-		b.add_theme_stylebox_override("normal", _card_style(on, false, away))
-		b.add_theme_stylebox_override("hover", _card_style(on, true, away))
-		b.add_theme_stylebox_override("pressed", _card_style(on, true, away))
-		b.add_theme_stylebox_override("disabled", _card_style(false, false, true))
-		b.disabled = away
-		var e := emo(it.id, 40); place(e, 36, 8, 40, 40); b.add_child(e)
-		var nl := lbl(D.ING[it.id].n, 13, D.C_INK, D.F_BL); nl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER; place(nl, 2, 52, 108, 18); b.add_child(nl)
-		var bar := panel(D.C_PAPER2, Color(0, 0, 0, 0), 0, 2); place(bar, 6, 84, 100, 5); b.add_child(bar)
-		var fill := panel(D.DCOL[d.cls], Color(0, 0, 0, 0), 0, 2); place(fill, 0, 0, D.DW[d.cls], 5); bar.add_child(fill)
-		b.tooltip_text = d.label
-		if on:
-			var ck := panel(D.C_ACCENT, D.C_ACCENT, 0, 2); place(ck, 90, 4, 18, 18)
-			var ci := ico("check", 14, Color.WHITE, 3.0); place(ci, 2, 2); ck.add_child(ci); b.add_child(ck)
+		var b := _serve_spot([it.id], on, away, "%s  %s" % [D.ING[it.id].n, d.label])
+		var bar := panel(D.C_PAPER2, Color(0, 0, 0, 0), 0, 2); place(bar, 26, 92, 60, 5); b.add_child(bar)
+		var fill := panel(D.DCOL[d.cls], Color(0, 0, 0, 0), 0, 2); place(fill, 0, 0, 60.0 * D.DW[d.cls] / 100.0, 5); bar.add_child(fill)
 		var u: int = it.uid
 		b.pressed.connect(func():
 			if serve_pick.has(u): serve_pick.erase(u)
@@ -2204,11 +2058,12 @@ func _draw_serve() -> void:
 	if busy_apps.size():
 		var info := _minfo()
 		info.get_child(0).add_child(ico("warn", 20, D.C_WARN))
-		info.get_child(0).add_child(lbl("%s 조리 중" % ", ".join(busy_apps.map(func(a): return a.n)), 15, D.C_WARN))
+		for a in busy_apps: info.get_child(0).add_child(_tipico(a.ic, "%s 조리 중" % a.n, D.C_WARN, 22))
 		v.add_child(info)
 	var hb := hbox(10)
 	hb.add_child(spacer())
 	var c := btn("x", "", "", "Ghost", Vector2(56, 46), 18)
+	c.tooltip_text = "닫기 Esc"
 	c.pressed.connect(close_modal)
 	hb.add_child(c)
 	var ok := btn("cloche", "제출", "1:00", "", Vector2(0, 46), 18)
@@ -2219,10 +2074,47 @@ func _draw_serve() -> void:
 		var tgt := Vector2(640, 360)
 		for u in list:
 			if item_cards.has(u): fly(g.get_item(u).id, item_cards[u].global_position + item_cards[u].size / 2, FLOOR.get_center())
-		act(60, "플레이팅", "cloche", func(): serve(list)))
+		act(60, "cloche", func(): serve(list)))
 	hb.add_child(ok)
 	v.add_child(hb)
 	open_ov(p)
+
+
+# 패스 위에 놓인 접시 하나
+func _serve_spot(ids: Array, on: bool, off: bool, tip: String) -> Button:
+	var b := Button.new()
+	b.theme_type_variation = "Flat"
+	b.focus_mode = Control.FOCUS_NONE
+	b.mouse_default_cursor_shape = Control.CURSOR_ARROW if off else Control.CURSOR_POINTING_HAND
+	b.custom_minimum_size = Vector2(112, 102)
+	b.tooltip_text = tip
+	b.disabled = off
+	var c := Vector2(56, 46)
+	b.draw.connect(func():
+		var tex := D.art("plate")
+		var dw := 88.0
+		var dh := dw * tex.get_size().y / tex.get_size().x
+		b.draw_set_transform(c + Vector2(0, dh * 0.42), 0, Vector2(1, 0.3))
+		b.draw_circle(Vector2.ZERO, dw * 0.42, Color(0.3, 0.18, 0.06, 0.2))
+		b.draw_set_transform(Vector2.ZERO)
+		b.draw_texture_rect(tex, Rect2(c - Vector2(dw, dh) / 2, Vector2(dw, dh)), false, Color(1, 1, 1, 0.4 if off else 1.0))
+		if on: b.draw_arc(c, dw * 0.54, 0, TAU, 48, D.C_ACCENT, 3.0, true)
+		elif b.is_hovered() and not off: b.draw_arc(c, dw * 0.54, 0, TAU, 48, Color(D.C_ACCENT, 0.5), 2.0, true))
+	b.mouse_entered.connect(b.queue_redraw)
+	b.mouse_exited.connect(b.queue_redraw)
+	var n := mini(4, ids.size())
+	for k in n:
+		var a := float(k) / n * TAU - 1.6
+		var es := 48 if n == 1 else 32
+		var q := c + (Vector2(cos(a), sin(a)) * 15.0 if n > 1 else Vector2.ZERO) - Vector2(es, es) / 2
+		var e := emo(ids[k], es)
+		place(e, q.x, q.y, es, es)
+		if off: e.modulate.a = 0.4
+		b.add_child(e)
+	if on:
+		var ck := panel(D.C_ACCENT, D.C_ACCENT, 0, 11); place(ck, 88, 2, 22, 22)
+		var ci := ico("check", 16, Color.WHITE, 3.0); place(ci, 3, 3); ck.add_child(ci); b.add_child(ck)
+	return b
 
 
 func time_over() -> void:
@@ -2258,10 +2150,10 @@ func serve(uids: Array) -> void:
 		var hr := pd / 2.0
 		plate.draw.connect(func():
 			for k in 5: plate.draw_circle(Vector2(hr, hr + 4 + k), hr - 1 + k, Color(0.25, 0.17, 0.08, 0.05))
-			plate.draw_circle(Vector2(hr, hr), hr - 1, Color("e3dbcd"))
+			plate.draw_circle(Vector2(hr, hr), hr - 1, Color("dcdedc"))
 			plate.draw_circle(Vector2(hr, hr), hr - 3, Color.WHITE)
 			plate.draw_circle(Vector2(hr, hr), hr * 0.83, D.C_LINE)
-			plate.draw_circle(Vector2(hr, hr), hr * 0.82, Color("faf7f1")))
+			plate.draw_circle(Vector2(hr, hr), hr * 0.82, Color("f8f8f6")))
 		p.add_child(plate)
 		var n := mini(8, pits.size())
 		var es: float = round(56.0 * pd / 250.0)
@@ -2303,9 +2195,10 @@ func serve(uids: Array) -> void:
 	var scl := hbox(16)
 	scl.alignment = BoxContainer.ALIGNMENT_CENTER
 	place(scl, 20, 484, 350, 22)
-	scl.add_child(lbl("완성도 %d" % res.total, 14, D.C_MUTE))
-	scl.add_child(ico("clock", 16, D.C_MUTE))
-	scl.add_child(lbl("%s 남김" % D.fmt(R.remain), 14, D.C_MUTE, D.F_NUM))
+	scl.add_child(_tipico("bot", "완성도", D.C_MUTE, 16))
+	scl.add_child(lbl(str(res.total), 14, D.C_MUTE, D.F_NUM))
+	scl.add_child(_tipico("clock", "남은 시간", D.C_MUTE, 16))
+	scl.add_child(lbl(D.fmt(R.remain), 14, D.C_MUTE, D.F_NUM))
 	p.add_child(scl)
 	var gp := panel(D.C_INK, D.C_INK, 0, 3)
 	place(gp, 160, 520, 70, 70)
@@ -2323,7 +2216,7 @@ func serve(uids: Array) -> void:
 	jd.add_child(ico("bot", 40, D.C_INK))
 	jd.add_child(lbl(Game.judge_line(res.total), 22, D.C_INK, D.F_BL))
 	p.add_child(jd)
-	var jl := ColorRect.new(); jl.color = Color("d3c8b5"); place(jl, rx, 78, 790, 2); p.add_child(jl)
+	var jl := ColorRect.new(); jl.color = Color("c6c9c7"); place(jl, rx, 78, 790, 2); p.add_child(jl)
 	var cy := 86.0
 	var bars := []
 	for c in res.cats:
@@ -2339,7 +2232,7 @@ func serve(uids: Array) -> void:
 		row.add_child(cs)
 		var rh := 32.0
 		if c.max:
-			var mx := lbl("/%d" % c.max, 12, D.C_MUTE, D.F_NUM)
+			var mx := lbl("/%d" % c.max, 13, D.C_MUTE, D.F_NUM)
 			place(mx, 752, 9, 40, 20)
 			row.add_child(mx)
 			var bb := panel(D.C_PAPER2, Color(0, 0, 0, 0), 0, 2)
@@ -2374,8 +2267,9 @@ func serve(uids: Array) -> void:
 		row.size.y = rh + 2
 		p.add_child(row)
 		cy += rh + 6
-	var rb := btn("trophy", "랭킹", "Enter", "", Vector2(0, 50), 20)
-	place(rb, 1220 - 28 - rb.size.x, 680 - 24 - 50)
+	var rb := btn("trophy", "랭킹", "", "", Vector2(0, 50), 20)
+	rb.tooltip_text = "Enter"
+	place(rb, 250, 530)
 	rb.pressed.connect(finish)
 	p.add_child(rb)
 	open_ov(p)
@@ -2456,25 +2350,32 @@ func build_receipt(R: Dictionary, rank: int, total: int) -> void:
 	var rk := hbox(8)
 	rk.add_child(ico("trophy", 22, D.C_INK))
 	rk.add_child(lbl("%d위" % rank, 19, D.C_INK, D.F_BL))
-	rk.add_child(lbl("/ %d명" % total, 15, D.C_MUTE))
+	rk.add_child(lbl("/ %d" % total, 15, D.C_MUTE, D.F_NUM))
 	v.add_child(rk)
 	var er := hbox(4)
 	er.custom_minimum_size = Vector2(0, 56)
 	for it in R.items.slice(0, 10): er.add_child(emo(it.id, 40))
 	v.add_child(er)
 	var ln := ColorRect.new(); ln.color = D.C_LINE; ln.custom_minimum_size = Vector2(0, 2); v.add_child(ln)
-	for row in [[R.dish, str(R.res.total)], ["시간 보너스", "+%d" % R.bonus], ["사용 시간", D.fmt(g.now)]]:
+	var dh := hbox(8)
+	var dn := lbl(R.dish, 15, D.C_INK2); dn.size_flags_horizontal = Control.SIZE_EXPAND_FILL; dn.clip_text = true
+	dh.add_child(dn)
+	dh.add_child(lbl(str(R.res.total), 15, D.C_INK, D.F_NUM))
+	v.add_child(dh)
+	for row in [["ff", "시간 보너스", "+%d" % R.bonus], ["clock", "사용 시간", D.fmt(g.now)]]:
 		var h := hbox(8)
-		var a := lbl(row[0], 15, D.C_INK2); a.size_flags_horizontal = Control.SIZE_EXPAND_FILL; a.clip_text = true
-		h.add_child(a)
-		h.add_child(lbl(row[1], 15, D.C_INK, D.F_NUM))
+		h.add_child(_tipico(row[0], row[1], D.C_INK2, 18))
+		h.add_child(spacer())
+		h.add_child(lbl(row[2], 15, D.C_INK, D.F_NUM))
 		v.add_child(h)
 	var fb := hbox(10)
 	place(fb, 26, 624 - 26 - 50, 468, 50)
-	var ag := btn("retry", "다시", "Enter", "", Vector2(0, 50), 20)
+	var ag := btn("retry", "다시", "", "", Vector2(0, 50), 20)
+	ag.tooltip_text = "Enter"
 	ag.pressed.connect(again)
 	fb.add_child(ag)
-	var hm := btn("home", "처음", "Esc", "Ghost", Vector2(0, 50), 20)
+	var hm := btn("home", "처음", "", "Ghost", Vector2(0, 50), 20)
+	hm.tooltip_text = "Esc"
 	hm.pressed.connect(go_title)
 	fb.add_child(hm)
 	rcpt.add_child(fb)
@@ -2504,7 +2405,6 @@ func _process(delta: float) -> void:
 			e.position.x -= delta * 40.0
 			if e.position.x < -70: e.position.x += 16 * 96.0
 		belt.queue_redraw()
-		title_lcd.modulate.a = 1.0 if fmod(t_now, 1.0) < 0.6 else 0.75
 	Sfx.ambient(_amb_want())
 	if act_state != null: _step_act()
 	elif screen == "play" or screen == "modal":
@@ -2600,8 +2500,9 @@ func _draw_menu() -> void:
 	h.add_child(ico("menu", 26, D.C_INK))
 	h.add_child(lbl("메뉴", 22, D.C_INK, D.F_BL))
 	v.add_child(h)
-	var add := func(icn: String, text: String, hint: String, fn: Callable, variant: String = "Soft"):
-		var b := btn(icn, text, hint, variant, Vector2(332, 48), 20)
+	var add := func(icn: String, text: String, tip: String, fn: Callable, variant: String = "Soft"):
+		var b := btn(icn, text, "", variant, Vector2(332, 48), 20)
+		b.tooltip_text = tip
 		b.pressed.connect(fn)
 		v.add_child(b)
 	add.call("play", "계속하기", "Esc", close_menu, "")
@@ -2613,7 +2514,7 @@ func _draw_menu() -> void:
 	add.call("full", "전체 화면 %s" % ("켜짐" if fs else "꺼짐"), "F11", func():
 		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_MAXIMIZED if fs else DisplayServer.WINDOW_MODE_FULLSCREEN); close_ov(); _draw_menu())
 	if menu_back == "play" or menu_back == "pick":
-		add.call("home", "처음 화면으로 (이번 판 기록 안 됨)", "", func(): close_ov(); W = {}; go_title())
+		add.call("home", "처음 화면", "이번 판 기록 안 됨", func(): close_ov(); W = {}; go_title())
 	add.call("power", "게임 종료", "", func(): get_tree().quit())
 	open_ov(p)
 	modal_kind = "menu"
@@ -2647,14 +2548,16 @@ func confirm_clear() -> void:
 	var v: VBoxContainer = pv[1]
 	var h := hbox(10)
 	h.add_child(ico("trash", 26, D.C_BAD))
-	h.add_child(lbl("랭킹을 모두 지울까요?", 20, D.C_INK, D.F_BL))
+	h.add_child(lbl("랭킹 전체 삭제", 20, D.C_INK, D.F_BL))
 	v.add_child(h)
 	var hb := hbox(10)
 	hb.add_child(spacer())
-	var c := btn("x", "", "Esc", "Ghost", Vector2(0, 46), 18)
+	var c := btn("x", "", "", "Ghost", Vector2(56, 46), 18)
+	c.tooltip_text = "취소 Esc"
 	c.pressed.connect(close_ov)
 	hb.add_child(c)
-	var ok := btn("trash", "지우기", "Enter", "", Vector2(0, 46), 18)
+	var ok := btn("trash", "지우기", "", "", Vector2(0, 46), 18)
+	ok.tooltip_text = "Enter"
 	ok.pressed.connect(_do_clear)
 	hb.add_child(ok)
 	v.add_child(hb)
@@ -2732,7 +2635,7 @@ func autopilot() -> void:
 		render_all()
 		work_go()
 		await get_tree().create_timer(1.2).timeout
-	act(120, "기다리는 중", "clock")
+	act(120, "clock")
 	await get_tree().create_timer(0.9).timeout
 	await _shot("07_cooking")
 	take_back("micro")
@@ -2773,7 +2676,7 @@ func autopilot() -> void:
 		if it.where == null and it.plate == null and it.id == "tteok": serve_pick[it.uid] = true
 	var list := serve_pick.keys()
 	close_ov(); screen = "play"
-	act(60, "플레이팅", "cloche", func(): serve(list))
+	act(60, "cloche", func(): serve(list))
 	await get_tree().create_timer(3.5).timeout
 	await _shot("10_result")
 	result_at = 0
