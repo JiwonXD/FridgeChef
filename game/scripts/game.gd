@@ -19,7 +19,7 @@ var logs: Array = []
 var over := false
 var result := {}
 var events: Array = []   # 화면에 전달할 사건: {k:"toast"|"sfx"|"done", ...}
-var plates: Array = []   # 조립한 접시: {pid, uids, pass}
+var plates: Array = []   # 쟁반 위 접시: {pid, uids}
 var next_pid := 1
 var next_cid := 1        # 구성 요소 번호. 같은 기구에서 함께 조리한 재료는 한 덩어리
 
@@ -333,7 +333,7 @@ func plate_put(u: int, pid: int) -> int:
 	plate_take(u)
 	var pl = get_plate(pid)
 	if pl == null:
-		pl = {"pid": next_pid, "uids": [], "pass": false}
+		pl = {"pid": next_pid, "uids": []}
 		next_pid += 1
 		plates.append(pl)
 	pl.uids.append(u)
@@ -374,15 +374,6 @@ func plate_take_comp(u: int) -> void:
 	var it = get_item(u)
 	if it == null: return
 	for o in siblings(it): plate_take(o.uid)
-
-
-func set_pass(pid: int, on: bool) -> void:
-	var pl = get_plate(pid)
-	if pl != null: pl.pass = on
-
-
-func passed_plates() -> Array:
-	return plates.filter(func(p): return p.pass)
 
 
 # ---------- 구성 요소와 조립 인식 ----------
@@ -910,11 +901,9 @@ func serve(groups: Array) -> Dictionary:
 	return result
 
 
-# 시간이 끝나면 패스 위 접시를 낸다. 패스가 비었으면 접시 전부, 접시도 없으면 조리대 전부를 한 접시로.
+# 시간이 끝나면 쟁반의 접시를 낸다. 접시가 없으면 조리대 전부를 한 접시로.
 func time_over_groups() -> Array:
 	for a in D.APPS:
 		if apps[a.id].s != null: finish_session(a, true)
-	var src := passed_plates()
-	if src.is_empty(): src = plates
-	if src.is_empty(): return [items.map(func(i): return i.uid)]
-	return src.map(func(p): return p.uids.duplicate())
+	if plates.is_empty(): return [items.map(func(i): return i.uid)]
+	return plates.map(func(p): return p.uids.duplicate())

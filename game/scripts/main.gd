@@ -46,7 +46,6 @@ var tbar_fill: Panel
 var w30: Button
 var w60: Button
 var wnext: Button
-var serve_btn: Button
 var bell_btn: Button
 var note_btn: Button
 var k_icon: TextureRect
@@ -803,20 +802,8 @@ func build_game() -> void:
 	wnext.pressed.connect(_wait_next)
 	dev.add_child(wnext)
 	dev.size.x = bx
-	serve_btn = Button.new()
-	serve_btn.theme_type_variation = "Flat"
-	serve_btn.focus_mode = Control.FOCUS_NONE
-	serve_btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	serve_btn.tooltip_text = "패스"
-	place(serve_btn, cx + bx + 12, ty, cw - bx - 12 - 70, 62)
-	serve_btn.draw.connect(_draw_pass)
-	serve_btn.mouse_entered.connect(serve_btn.queue_redraw)
-	serve_btn.mouse_exited.connect(serve_btn.queue_redraw)
-	serve_btn.pressed.connect(open_pass)
-	r.add_child(serve_btn)
 	bell_btn = _bell_button(66.0)
 	place(bell_btn, cx + cw - 66.0, ty - 2.0, 66, 66)
-	serve_btn.size.x = cw - bx - 12 - 66.0 - 6.0
 	bell_btn.pressed.connect(press_bell)
 	r.add_child(bell_btn)
 	# 작업 패널 (영역을 눌렀을 때)
@@ -960,10 +947,9 @@ func open_tray() -> void:
 
 func _work_tray(v: VBoxContainer) -> void:
 	_work_head(v, ico("cloche", 30, D.C_INK), "쟁반")
-	var plates_here: Array = g.plates.filter(func(p): return not p.pass)
-	if plates_here.size():
+	if g.plates.size():
 		var h := _row(v, "cloche", "접시")
-		for pl in plates_here:
+		for pl in g.plates:
 			var pb := _plate_btn(pl)
 			pb.pressed.connect(open_plate.bind(pl.pid))
 			h.add_child(pb)
@@ -1040,8 +1026,6 @@ func open_item(u: int) -> void:
 	if W.get("area", "") == "tray":
 		do_plate(u, -1)
 		return
-	if W.get("area", "") == "pass":
-		W = {}
 	if W.get("area", "") == "board" and W.get("uid", -1) == u:
 		close_work()
 		return
@@ -1098,7 +1082,6 @@ func render_work() -> void:
 	elif area == "plate": _work_plate(v)
 	elif area == "comp": _work_comp(v)
 	elif area == "tray": _work_tray(v)
-	elif area == "pass": _work_pass(v)
 	elif area == "sink": _work_sink(v)
 	else:
 		var st: Dictionary = g.apps[area]
@@ -1413,7 +1396,6 @@ func _work_board(v: VBoxContainer) -> void:
 	nb.pressed.connect(do_plate.bind(it.uid, -1))
 	r3.add_child(nb)
 	for pq in g.plates:
-		if pq.pass: continue
 		var pb := _plate_btn(pq)
 		pb.pressed.connect(do_plate.bind(it.uid, pq.pid))
 		r3.add_child(pb)
@@ -1537,13 +1519,6 @@ func _work_plate(v: VBoxContainer) -> void:
 		b.pressed.connect(do_plate.bind(gr[0].uid, pl.pid))
 		fl.add_child(b)
 	h2.add_child(fl)
-	var f := hbox(10)
-	f.add_child(spacer())
-	var send := btn("next", "", "0:10", "", Vector2(0, 40), 18)
-	send.tooltip_text = "패스에 올리기"
-	send.pressed.connect(send_plate.bind(pl.pid))
-	f.add_child(send)
-	v.add_child(f)
 
 
 func _work_comp(v: VBoxContainer) -> void:
@@ -1568,68 +1543,15 @@ func _work_comp(v: VBoxContainer) -> void:
 	nb.pressed.connect(do_plate.bind(it.uid, -1))
 	r3.add_child(nb)
 	for pq in g.plates:
-		if pq.pass: continue
 		var pb := _plate_btn(pq)
 		pb.pressed.connect(do_plate.bind(it.uid, pq.pid))
 		r3.add_child(pb)
 
 
-# ---------- 패스: 완성한 접시를 올리고 탁상 벨을 누른다 ----------
-func open_pass() -> void:
-	if busy or screen != "play": return
-	if W.get("area", "") == "pass":
-		close_work(); return
-	W = {"area": "pass", "picks": []}
-	sfx("pop")
-	render_all()
+# ---------- 탁상 벨: 누르면 쟁반의 접시 전부를 낸다 ----------
+var bell_armed := -100000
 
 
-func send_plate(pid: int) -> void:
-	if busy: return
-	var pl = g.get_plate(pid)
-	if pl == null: return
-	sfx("plate")
-	var fn := func():
-		g.set_pass(pid, true)
-		W = {"area": "pass", "picks": []}
-	act(10, "cloche", fn)
-
-
-func _work_pass(v: VBoxContainer) -> void:
-	_work_head(v, ico("cloche", 28, D.C_INK), "패스")
-	var pp := g.passed_plates()
-	var h := _row(v, "cloche", "패스 위 접시")
-	for pl in pp:
-		var its := g.plate_items(pl)
-		var b := _group_btn(its, true, "%s 내리기" % g.dish_info(its).name)
-		var pid: int = pl.pid
-		b.pressed.connect(func(): g.set_pass(pid, false); sfx("click"); render_all())
-		h.add_child(b)
-	var rest: Array = g.plates.filter(func(p): return not p.pass)
-	if rest.size():
-		var h2 := _row(v, "next", "쟁반 접시")
-		for pl in rest:
-			var its := g.plate_items(pl)
-			var b := _group_btn(its, false, "%s 올리기 0:10" % g.dish_info(its).name)
-			b.pressed.connect(send_plate.bind(pl.pid))
-			h2.add_child(b)
-	v.add_child(spacer())
-	var f := hbox(10)
-	var cooking := D.APPS.filter(func(a): return g.apps[a.id].s != null and g.apps[a.id].s.items.size() > 0)
-	for a in cooking: f.add_child(_tipico(a.ic, "%s 조리 중" % a.n, D.C_WARN, 22))
-	var served := []
-	for pl in pp: served.append_array(pl.uids)
-	var left := g.items.filter(func(i): return not served.has(i.uid))
-	if left.size(): f.add_child(_chip([ico("warn", 18, D.C_WARN)], str(left.size()), D.C_WARN, "패스에 없는 재료"))
-	f.add_child(spacer())
-	var bell := _bell_button(58.0)
-	dis(bell, pp.is_empty())
-	bell.pressed.connect(ring_bell)
-	f.add_child(bell)
-	v.add_child(f)
-
-
-# 탁상 벨: 그림이 곧 버튼이다
 func _bell_button(sz: float) -> Button:
 	var b := Button.new()
 	b.theme_type_variation = "Flat"
@@ -1648,67 +1570,21 @@ func _bell_button(sz: float) -> Button:
 	return b
 
 
-# 벨을 누르면 바로 심사. 조리 중이거나 패스에 없는 재료가 있으면 한 번 보여 주고, 다시 누르면 심사.
+# 접시에 안 담은 재료가 있으면 한 번 알려 주고, 3초 안에 다시 누르면 낸다
 func press_bell() -> void:
-	if busy or screen != "play": return
-	var pp := g.passed_plates()
-	if pp.is_empty(): return
-	var served := []
-	for pl in pp: served.append_array(pl.uids)
-	var left: bool = g.items.any(func(i): return not served.has(i.uid))
-	if left and W.get("area", "") != "pass":
-		W = {"area": "pass", "picks": []}
-		sfx("pop")
-		render_all()
+	if busy or screen != "play" or g.plates.is_empty(): return
+	var left: int = g.items.filter(func(i): return i.plate == null).size()
+	var t_ms := Time.get_ticks_msec()
+	if left > 0 and t_ms - bell_armed > 3000:
+		bell_armed = t_ms
+		sfx("tick")
+		toast("접시 밖 재료 %d" % left, true)
 		return
-	ring_bell()
-
-
-func ring_bell() -> void:
-	if busy: return
-	var pp := g.passed_plates()
-	if pp.is_empty(): return
-	var groups: Array = pp.map(func(p): return p.uids.duplicate())
+	bell_armed = -100000
 	W = {}
 	sfx("ding")
+	var groups: Array = g.plates.map(func(p): return p.uids.duplicate())
 	act(60, "cloche", func(): serve(groups))
-
-
-# 스테인리스 패스 선반
-func _draw_pass() -> void:
-	var b := serve_btn
-	var r := Rect2(Vector2.ZERO, b.size)
-	var on: bool = W.get("area", "") == "pass"
-	b.draw_style_box(_sb(Color("b9bdbb"), Color(0, 0, 0, 0), 0, 8), Rect2(0, 4, r.size.x, r.size.y - 4))
-	b.draw_style_box(_sb(Color("dfe2e0"), Color(0, 0, 0, 0), 0, 8), Rect2(0, 0, r.size.x, r.size.y - 8))
-	b.draw_rect(Rect2(10, 6, r.size.x - 20, 2), Color(1, 1, 1, 0.8))
-	var pp := g.passed_plates() if g != null else []
-	var step := minf(52.0, (r.size.x - 60.0) / maxf(1, pp.size() - 1))
-	for k in pp.size():
-		_draw_dish(b, _dish_kind(g.plate_items(pp[k])), Vector2(30 + k * step, 26), 48.0)
-	if on: b.draw_style_box(_sb(Color(0, 0, 0, 0), D.C_ACCENT, 3, 8), r)
-	elif b.is_hovered(): b.draw_style_box(_sb(Color(0, 0, 0, 0), Color(D.C_ACCENT, 0.5), 2, 8), r)
-
-
-func render_pass() -> void:
-	if not is_instance_valid(serve_btn): return
-	clear(serve_btn)
-	serve_btn.queue_redraw()
-	var pp := g.passed_plates()
-	var names := []
-	var step := minf(52.0, (serve_btn.size.x - 60.0) / maxf(1, pp.size() - 1))
-	for k in pp.size():
-		var its := g.plate_items(pp[k])
-		names.append(g.dish_info(its).name)
-		var n := mini(3, its.size())
-		for j in n:
-			var a := float(j) / n * TAU - 1.6
-			var q := Vector2(30 + k * step, 26) + (Vector2(cos(a), sin(a)) * 8.0 if n > 1 else Vector2.ZERO) - Vector2(11, 11)
-			var e := emo(its[j].id, 22)
-			place(e, q.x, q.y, 22, 22)
-			e.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			serve_btn.add_child(e)
-	serve_btn.tooltip_text = "패스" if names.is_empty() else "\n".join(names)
 
 
 func work_go() -> void:
@@ -1741,7 +1617,6 @@ func render_all() -> void:
 	update_clock()
 	render_counter()
 	if is_instance_valid(tray_btn): tray_btn.queue_redraw()
-	render_pass()
 	render_work()
 	update_stations()
 	render_top_btns()
@@ -1763,8 +1638,7 @@ func render_top_btns() -> void:
 	dis(w30, d); dis(w60, d)
 	dis(wnext, d or ne == INF)
 	set_btn(wnext, "next", "", "--:--" if ne == INF else D.fmt(ne - g.now))
-	dis(serve_btn, d)
-	dis(bell_btn, d or g.passed_plates().is_empty())
+	dis(bell_btn, d or g.plates.is_empty())
 	dis(note_btn, d)
 
 
@@ -1834,7 +1708,7 @@ func render_counter() -> void:
 			comp_rep[gr[0].uid] = gr
 			rows[1].append(gr[0])
 		elif gr[0].uid != on_board: rows[0 if _dish(gr[0]) == "" else 1].append(gr[0])
-	var board_plates: Array = g.plates.filter(func(p): return not p.pass)
+	var board_plates: Array = g.plates
 	var pos := {}
 	for ri in 2:
 		var n: int = rows[ri].size()
@@ -2982,12 +2856,8 @@ func autopilot() -> void:
 	await get_tree().create_timer(1.2).timeout
 	close_work()
 	await _shot("08e_tray_three")
-	for pl in g.plates.duplicate():
-		send_plate(pl.pid)
-		await get_tree().create_timer(1.2).timeout
-	await _shot("09_pass")
 	press_bell()
-	await get_tree().create_timer(0.3).timeout
+	await _shot("09_armed", 0.4)
 	press_bell()
 	await get_tree().create_timer(3.5).timeout
 	await _shot("10_result")
