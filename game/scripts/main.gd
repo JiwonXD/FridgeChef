@@ -47,6 +47,7 @@ var w30: Button
 var w60: Button
 var wnext: Button
 var serve_btn: Button
+var bell_btn: Button
 var note_btn: Button
 var k_icon: TextureRect
 var k_name: Label
@@ -807,12 +808,19 @@ func build_game() -> void:
 	serve_btn.focus_mode = Control.FOCUS_NONE
 	serve_btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	serve_btn.tooltip_text = "패스"
-	place(serve_btn, cx + bx + 12, ty, cw - bx - 12, 62)
+	place(serve_btn, cx + bx + 12, ty, cw - bx - 12 - 70, 62)
 	serve_btn.draw.connect(_draw_pass)
 	serve_btn.mouse_entered.connect(serve_btn.queue_redraw)
 	serve_btn.mouse_exited.connect(serve_btn.queue_redraw)
 	serve_btn.pressed.connect(open_pass)
 	r.add_child(serve_btn)
+	bell_btn = btn("bell", "", "", "", Vector2(62, 62), 40)
+	bell_btn.tooltip_text = "벨 누르기 1:00"
+	var bell_w: float = maxf(62.0, bell_btn.get_combined_minimum_size().x)
+	place(bell_btn, cx + cw - bell_w, ty)
+	serve_btn.size.x = cw - bx - 12 - bell_w - 8
+	bell_btn.pressed.connect(press_bell)
+	r.add_child(bell_btn)
 	# 작업 패널 (영역을 눌렀을 때)
 	acts = Panel.new()
 	var asb := _sb(D.C_CARD, Color(0, 0, 0, 0), 0, 16)
@@ -1590,7 +1598,7 @@ func send_plate(pid: int) -> void:
 
 
 func _work_pass(v: VBoxContainer) -> void:
-	_work_head(v, ico("bell", 28, D.C_INK), "패스")
+	_work_head(v, ico("cloche", 28, D.C_INK), "패스")
 	var pp := g.passed_plates()
 	var h := _row(v, "cloche", "패스 위 접시")
 	for pl in pp:
@@ -1616,12 +1624,28 @@ func _work_pass(v: VBoxContainer) -> void:
 	var left := g.items.filter(func(i): return not served.has(i.uid))
 	if left.size(): f.add_child(_chip([ico("warn", 18, D.C_WARN)], str(left.size()), D.C_WARN, "패스에 없는 재료"))
 	f.add_child(spacer())
-	var bell := btn("bell", "", "1:00", "", Vector2(0, 46), 22)
-	bell.tooltip_text = "벨 누르기"
+	var bell := btn("bell", "", "", "", Vector2(50, 50), 32)
+	bell.tooltip_text = "벨 누르기 1:00"
 	dis(bell, pp.is_empty())
 	bell.pressed.connect(ring_bell)
 	f.add_child(bell)
 	v.add_child(f)
+
+
+# 벨을 누르면 바로 심사. 조리 중이거나 패스에 없는 재료가 있으면 한 번 보여 주고, 다시 누르면 심사.
+func press_bell() -> void:
+	if busy or screen != "play": return
+	var pp := g.passed_plates()
+	if pp.is_empty(): return
+	var served := []
+	for pl in pp: served.append_array(pl.uids)
+	var left: bool = g.items.any(func(i): return not served.has(i.uid))
+	if left and W.get("area", "") != "pass":
+		W = {"area": "pass", "picks": []}
+		sfx("pop")
+		render_all()
+		return
+	ring_bell()
 
 
 func ring_bell() -> void:
@@ -1643,7 +1667,7 @@ func _draw_pass() -> void:
 	b.draw_style_box(_sb(Color("dfe2e0"), Color(0, 0, 0, 0), 0, 8), Rect2(0, 0, r.size.x, r.size.y - 8))
 	b.draw_rect(Rect2(10, 6, r.size.x - 20, 2), Color(1, 1, 1, 0.8))
 	var pp := g.passed_plates() if g != null else []
-	var step := minf(52.0, (r.size.x - 66.0) / maxf(1, pp.size()))
+	var step := minf(52.0, (r.size.x - 60.0) / maxf(1, pp.size() - 1))
 	for k in pp.size():
 		_draw_dish(b, _dish_kind(g.plate_items(pp[k])), Vector2(30 + k * step, 26), 48.0)
 	if on: b.draw_style_box(_sb(Color(0, 0, 0, 0), D.C_ACCENT, 3, 8), r)
@@ -1656,7 +1680,7 @@ func render_pass() -> void:
 	serve_btn.queue_redraw()
 	var pp := g.passed_plates()
 	var names := []
-	var step := minf(52.0, (serve_btn.size.x - 66.0) / maxf(1, pp.size()))
+	var step := minf(52.0, (serve_btn.size.x - 60.0) / maxf(1, pp.size() - 1))
 	for k in pp.size():
 		var its := g.plate_items(pp[k])
 		names.append(g.dish_info(its).name)
@@ -1668,10 +1692,6 @@ func render_pass() -> void:
 			place(e, q.x, q.y, 22, 22)
 			e.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			serve_btn.add_child(e)
-	var bi := ico("bell", 26, D.C_ACCENT if pp.size() else D.C_MUTE)
-	place(bi, serve_btn.size.x - 40, 14)
-	bi.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	serve_btn.add_child(bi)
 	serve_btn.tooltip_text = "패스" if names.is_empty() else "\n".join(names)
 
 
@@ -1728,6 +1748,7 @@ func render_top_btns() -> void:
 	dis(wnext, d or ne == INF)
 	set_btn(wnext, "next", "", "--:--" if ne == INF else D.fmt(ne - g.now))
 	dis(serve_btn, d)
+	dis(bell_btn, d or g.passed_plates().is_empty())
 	dis(note_btn, d)
 
 
@@ -2946,7 +2967,9 @@ func autopilot() -> void:
 		send_plate(pl.pid)
 		await get_tree().create_timer(1.2).timeout
 	await _shot("09_pass")
-	ring_bell()
+	press_bell()
+	await get_tree().create_timer(0.3).timeout
+	press_bell()
 	await get_tree().create_timer(3.5).timeout
 	await _shot("10_result")
 	var plate_btn: Button = null
