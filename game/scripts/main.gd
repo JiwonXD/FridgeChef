@@ -814,11 +814,9 @@ func build_game() -> void:
 	serve_btn.mouse_exited.connect(serve_btn.queue_redraw)
 	serve_btn.pressed.connect(open_pass)
 	r.add_child(serve_btn)
-	bell_btn = btn("bell", "", "", "", Vector2(62, 62), 40)
-	bell_btn.tooltip_text = "벨 누르기 1:00"
-	var bell_w: float = maxf(62.0, bell_btn.get_combined_minimum_size().x)
-	place(bell_btn, cx + cw - bell_w, ty)
-	serve_btn.size.x = cw - bx - 12 - bell_w - 8
+	bell_btn = _bell_button(66.0)
+	place(bell_btn, cx + cw - 66.0, ty - 2.0, 66, 66)
+	serve_btn.size.x = cw - bx - 12 - 66.0 - 6.0
 	bell_btn.pressed.connect(press_bell)
 	r.add_child(bell_btn)
 	# 작업 패널 (영역을 눌렀을 때)
@@ -1624,12 +1622,30 @@ func _work_pass(v: VBoxContainer) -> void:
 	var left := g.items.filter(func(i): return not served.has(i.uid))
 	if left.size(): f.add_child(_chip([ico("warn", 18, D.C_WARN)], str(left.size()), D.C_WARN, "패스에 없는 재료"))
 	f.add_child(spacer())
-	var bell := btn("bell", "", "", "", Vector2(50, 50), 32)
-	bell.tooltip_text = "벨 누르기 1:00"
+	var bell := _bell_button(58.0)
 	dis(bell, pp.is_empty())
 	bell.pressed.connect(ring_bell)
 	f.add_child(bell)
 	v.add_child(f)
+
+
+# 탁상 벨: 그림이 곧 버튼이다
+func _bell_button(sz: float) -> Button:
+	var b := Button.new()
+	b.theme_type_variation = "Flat"
+	b.focus_mode = Control.FOCUS_NONE
+	b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	b.custom_minimum_size = Vector2(sz, sz)
+	b.tooltip_text = "벨 누르기 1:00"
+	var t := TextureRect.new()
+	t.texture = D.art("bell")
+	t.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	t.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	t.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	place(t, 0, 0, sz, sz)
+	b.add_child(t)
+	juice(b)
+	return b
 
 
 # 벨을 누르면 바로 심사. 조리 중이거나 패스에 없는 재료가 있으면 한 번 보여 주고, 다시 누르면 심사.
