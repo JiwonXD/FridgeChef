@@ -1,0 +1,69 @@
+name: Build Windows exe
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  GODOT_VERSION: "4.3"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache Godot
+        id: cache-godot
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/godot
+            ~/.local/share/godot/export_templates
+          key: godot-${{ env.GODOT_VERSION }}-stable
+
+      - name: Download Godot and export templates
+        if: steps.cache-godot.outputs.cache-hit != 'true'
+        run: |
+          base=https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable
+          mkdir -p ~/godot
+          curl -fsSL -o /tmp/godot.zip "$base/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          unzip -q /tmp/godot.zip -d ~/godot
+          mv ~/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64 ~/godot/godot
+          curl -fsSL -o /tmp/templates.tpz "$base/Godot_v${GODOT_VERSION}-stable_export_templates.tpz"
+          unzip -q /tmp/templates.tpz -d /tmp/tpl
+          dest=~/.local/share/godot/export_templates/${GODOT_VERSION}.stable
+          mkdir -p "$dest"
+          mv /tmp/tpl/templates/windows_* /tmp/tpl/templates/version.txt "$dest"/
+
+      - name: Export
+        working-directory: game
+        run: |
+          mkdir -p ../out
+          ~/godot/godot --headless --import || true
+          ~/godot/godot --headless --export-release "Windows Desktop" ../out/FridgeChef.exe
+          test -s ../out/FridgeChef.exe
+
+      - name: Package
+        run: |
+          cp build/README.txt out/
+          cp -r build/licenses out/
+          cd out && zip -qr ../FridgeChef-win64.zip .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FridgeChef-win64
+          path: FridgeChef-win64.zip
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            FridgeChef-win64.zip
+            out/FridgeChef.exe
