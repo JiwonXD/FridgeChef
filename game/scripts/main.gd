@@ -736,14 +736,14 @@ func build_game() -> void:
 	k_name.tooltip_text = g.theme.d
 	k_name.mouse_filter = Control.MOUSE_FILTER_PASS
 	r.add_child(k_name)
-	note_btn = btn("book", "", "", "Ghost", Vector2(44, 44), 22)
+	note_btn = btn("book", "", "", "Ghost", Vector2(34, 34), 18)
 	note_btn.tooltip_text = "레시피 노트"
-	place(note_btn, cx + cw - 44, 278)
+	place(note_btn, cx + cw - 74, 279)
 	note_btn.pressed.connect(open_note)
 	r.add_child(note_btn)
-	var mb := btn("menu", "", "", "Ghost", Vector2(44, 44), 22)
+	var mb := btn("menu", "", "", "Ghost", Vector2(34, 34), 18)
 	mb.tooltip_text = "메뉴 Esc"
-	place(mb, cx + cw - 94, 278)
+	place(mb, cx + cw - 34, 279)
 	mb.pressed.connect(open_menu)
 	r.add_child(mb)
 	# 타이머 (주방 타이머 기기)
@@ -976,6 +976,7 @@ func render_work() -> void:
 	var area: String = W.get("area", "")
 	acts.visible = area != ""
 	if area == "": return
+	acts.size.y = 720.0 - PANEL_Y - 10.0
 	var v := vbox(6)
 	v.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	v.offset_left = 16; v.offset_right = -16; v.offset_top = 10; v.offset_bottom = -10
@@ -989,15 +990,25 @@ func render_work() -> void:
 		var st: Dictionary = g.apps[area]
 		if st.s != null and st.s.T > 0: _work_running(v)
 		else: _work_setup(v)
+	_fit_acts.call_deferred(v)
 
 
-func _work_head(v: VBoxContainer, icn: Control, title: String, extra: Array = []) -> HBoxContainer:
+# 내용만큼만 창을 연다. 아래 바닥이 그대로 보이게.
+func _fit_acts(v: VBoxContainer) -> void:
+	if not is_instance_valid(v): return
+	await get_tree().process_frame
+	if not is_instance_valid(v): return
+	acts.size.y = clampf(v.get_combined_minimum_size().y + 20.0, 110.0, 720.0 - PANEL_Y - 10.0)
+
+
+func _work_head(v: VBoxContainer, icn: Control, title: String, extra: Array = [], right: Array = []) -> HBoxContainer:
 	var h := hbox(10)
 	h.custom_minimum_size = Vector2(0, 32)
 	h.add_child(icn)
 	h.add_child(lbl(title, 18, D.C_INK, D.F_BL))
 	for e in extra: h.add_child(e)
 	h.add_child(spacer())
+	for e in right: h.add_child(e)
 	var cl := btn("x", "", "", "Soft", Vector2(36, 32), 16)
 	cl.tooltip_text = "닫기 Esc"
 	cl.pressed.connect(close_work)
@@ -1057,7 +1068,7 @@ func _time_row(h: HBoxContainer, mx: float) -> void:
 		var b := btn("", D.fmt(absf(dd)).insert(0, "-"), "", "Mini", Vector2(52, 36))
 		b.pressed.connect(func(): W.T = clampf(W.T + dd, 10, mx); sfx("tick"); render_all())
 		h.add_child(b)
-	h.add_child(lcd_box(D.fmt(W.T), 24, 104, 36))
+	h.add_child(lcd_box(D.fmt(W.T), 20, 84, 36))
 	for dd in [10, 60]:
 		var b := btn("", "+" + D.fmt(dd), "", "Mini", Vector2(52, 36))
 		b.pressed.connect(func(): W.T = clampf(W.T + dd, 10, mx); sfx("tick"); render_all())
@@ -1252,8 +1263,7 @@ func _work_board(v: VBoxContainer) -> void:
 	del.tooltip_text = "버리기"
 	del.get_meta("box").get_child(0).modulate = D.C_BAD
 	del.pressed.connect(func(): W = {}; g.discard(it.uid); sfx("click"); render_all())
-	ex.append(del)
-	_work_head(v, emo(it.id, 34), gi.n, ex)
+	_work_head(v, emo(it.id, 34), gi.n, ex, [del])
 	var row := _row(v, "knife", "손질")
 	var pl := g.prep_list(it)
 	var cl2 := g.cut_list(it)
@@ -1270,16 +1280,6 @@ func _work_board(v: VBoxContainer) -> void:
 		row.add_child(b)
 	if pl.is_empty() and cl2.is_empty():
 		row.add_child(_tipico("check", "손질 끝", D.C_OK))
-	var r3 := _row(v, "cloche", "접시에 담기")
-	var nb := btn("plus", "", "0:10", "Soft", Vector2(0, 40), 14)
-	nb.tooltip_text = "새 접시"
-	nb.pressed.connect(do_plate.bind(it.uid, -1))
-	r3.add_child(nb)
-	for pq in g.plates:
-		if pq.pass: continue
-		var pb := _plate_btn(pq)
-		pb.pressed.connect(do_plate.bind(it.uid, pq.pid))
-		r3.add_child(pb)
 	var r2 := _row(v, "shaker", "밑간 최대 3개")
 	var grid := GridContainer.new()
 	grid.columns = 8
@@ -1293,6 +1293,16 @@ func _work_board(v: VBoxContainer) -> void:
 		b.pressed.connect(do_season.bind(it.uid, k))
 		grid.add_child(b)
 	r2.add_child(grid)
+	var r3 := _row(v, "cloche", "접시에 담기")
+	var nb := btn("plus", "", "0:10", "Soft", Vector2(0, 40), 14)
+	nb.tooltip_text = "새 접시"
+	nb.pressed.connect(do_plate.bind(it.uid, -1))
+	r3.add_child(nb)
+	for pq in g.plates:
+		if pq.pass: continue
+		var pb := _plate_btn(pq)
+		pb.pressed.connect(do_plate.bind(it.uid, pq.pid))
+		r3.add_child(pb)
 
 
 func _plate_btn(pl: Dictionary) -> Button:
@@ -1395,10 +1405,6 @@ func _work_plate(v: VBoxContainer) -> void:
 	var info := g.dish_info(its)
 	var ex := []
 	if info.tier == 2: ex.append(_tipico("check", "레시피 조립", D.C_OK, 20))
-	var send := btn("bell", "", "0:10", "Soft", Vector2(0, 32), 16)
-	send.tooltip_text = "패스에 올리기"
-	send.pressed.connect(send_plate.bind(pl.pid))
-	ex.append(send)
 	_work_head(v, ico("cloche", 30, D.C_INK), info.name, ex)
 	var h := _row(v, "cloche", "담긴 구성 요소")
 	for gr in g.comp_groups(its):
@@ -1421,6 +1427,13 @@ func _work_plate(v: VBoxContainer) -> void:
 		b.pressed.connect(do_plate.bind(gr[0].uid, pl.pid))
 		fl.add_child(b)
 	h2.add_child(fl)
+	var f := hbox(10)
+	f.add_child(spacer())
+	var send := btn("bell", "", "0:10", "", Vector2(0, 40), 18)
+	send.tooltip_text = "패스에 올리기"
+	send.pressed.connect(send_plate.bind(pl.pid))
+	f.add_child(send)
+	v.add_child(f)
 
 
 func _work_comp(v: VBoxContainer) -> void:
@@ -1438,8 +1451,7 @@ func _work_comp(v: VBoxContainer) -> void:
 	del.tooltip_text = "버리기"
 	del.get_meta("box").get_child(0).modulate = D.C_BAD
 	del.pressed.connect(func(): W = {}; g.discard_comp(it.uid); sfx("click"); render_all())
-	ex.append(del)
-	_work_head(v, ico("cloche", 30, D.C_INK), _group_name(gr), ex)
+	_work_head(v, ico("cloche", 30, D.C_INK), _group_name(gr), ex, [del])
 	var r3 := _row(v, "cloche", "접시에 담기")
 	var nb := btn("plus", "", "0:10", "Soft", Vector2(0, 40), 14)
 	nb.tooltip_text = "새 접시"
@@ -1554,7 +1566,7 @@ func render_pass() -> void:
 			place(e, q.x, q.y, 22, 22)
 			e.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			serve_btn.add_child(e)
-	var bi := ico("bell", 26, D.C_INK if pp.size() else D.C_MUTE)
+	var bi := ico("bell", 26, D.C_ACCENT if pp.size() else D.C_MUTE)
 	place(bi, serve_btn.size.x - 40, 14)
 	bi.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	serve_btn.add_child(bi)
@@ -2325,7 +2337,7 @@ func serve(groups: Array) -> void:
 	scl.add_child(lbl(D.fmt(R.remain), 14, D.C_MUTE, D.F_NUM))
 	p.add_child(scl)
 	var gp := panel(D.C_INK, D.C_INK, 0, 3)
-	place(gp, 160, 520, 70, 70)
+	place(gp, 112, 520, 70, 70)
 	var gl := lbl(Game.grade_of(res.total), 44, D.C_PAPER, D.F_BL)
 	gl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	gl.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -2347,7 +2359,7 @@ func serve(groups: Array) -> void:
 	p.add_child(res_box)
 	var rb := btn("trophy", "랭킹", "", "", Vector2(0, 50), 20)
 	rb.tooltip_text = "Enter"
-	place(rb, 250, 530)
+	place(rb, 198, 530)
 	rb.pressed.connect(finish)
 	p.add_child(rb)
 	open_ov(p)
