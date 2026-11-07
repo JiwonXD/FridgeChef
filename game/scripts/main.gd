@@ -716,7 +716,7 @@ func build_game() -> void:
 	tray_btn.theme_type_variation = "Flat"
 	tray_btn.focus_mode = Control.FOCUS_NONE
 	tray_btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	tray_btn.tooltip_text = "쟁반"
+	tray_btn.tooltip_text = "선반"
 	var tr_r: Rect2 = LAYOUT.tray
 	place(tray_btn, tr_r.position.x, tr_r.position.y, tr_r.size.x, tr_r.size.y)
 	tray_btn.draw.connect(_draw_tray_btn)
@@ -802,8 +802,8 @@ func build_game() -> void:
 	wnext.pressed.connect(_wait_next)
 	dev.add_child(wnext)
 	dev.size.x = bx
-	bell_btn = _bell_button(66.0)
-	place(bell_btn, cx + cw - 66.0, ty - 2.0, 66, 66)
+	bell_btn = _submit_button()
+	place(bell_btn, cx + cw - bell_btn.custom_minimum_size.x, ty, bell_btn.custom_minimum_size.x, 62)
 	bell_btn.pressed.connect(press_bell)
 	r.add_child(bell_btn)
 	# 작업 패널 (영역을 눌렀을 때)
@@ -940,29 +940,82 @@ func open_tray() -> void:
 	if busy or screen != "play": return
 	if W.get("area", "") == "tray":
 		close_work(); return
-	W = {"area": "tray", "picks": []}
+	W = {"area": "tray", "picks": [], "target": "plate"}
 	sfx("pop")
 	render_all()
 
 
+# 그릇 목록의 한 칸: 새 접시, 새 그릇, 또는 선반 위 접시
+func _vessel_btn(kind: String, on: bool, tip: String, its: Array = []) -> Button:
+	var b := Button.new()
+	b.theme_type_variation = "OptOn" if on else "Opt"
+	b.focus_mode = Control.FOCUS_NONE
+	b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	b.tooltip_text = tip
+	b.custom_minimum_size = Vector2(60, 52)
+	b.draw.connect(func(): _draw_dish(b, kind, Vector2(30, 24), 42.0))
+	var n := mini(3, its.size())
+	for k in n:
+		var a := float(k) / n * TAU - 1.6
+		var q := Vector2(30, 24) + (Vector2(cos(a), sin(a)) * 8.0 if n > 1 else Vector2.ZERO) - Vector2(9, 9)
+		var e := emo(its[k].id, 18)
+		place(e, q.x, q.y, 18, 18)
+		e.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		b.add_child(e)
+	juice(b)
+	return b
+
+
 func _work_tray(v: VBoxContainer) -> void:
-	_work_head(v, ico("cloche", 30, D.C_INK), "쟁반")
-	if g.plates.size():
-		var h := _row(v, "cloche", "접시")
-		for pl in g.plates:
-			var pb := _plate_btn(pl)
-			pb.pressed.connect(open_plate.bind(pl.pid))
-			h.add_child(pb)
-	var h2 := _row(v, "plus", "새 접시에 담기")
+	_work_head(v, ico("cloche", 30, D.C_INK), "선반")
+	var target = W.get("target", "plate")
+	if target is not String and g.get_plate(int(target)) == null:
+		target = "plate"
+		W.target = target
+	var h := _row(v, "cloche", "그릇")
+	for pl in g.plates:
+		var its := g.plate_items(pl)
+		var kind: String = pl.get("kind", _dish_kind(its))
+		var pb := _vessel_btn(kind, target is not String and int(target) == int(pl.pid), g.dish_info(its).name, its)
+		var pid: int = pl.pid
+		pb.pressed.connect(func(): W.target = pid; sfx("click"); render_all())
+		h.add_child(pb)
+	for kn in [["plate", "새 접시"], ["bowl", "새 그릇"]]:
+		var nb := _vessel_btn(kn[0], target is String and target == kn[0], kn[1])
+		var want: String = kn[0]
+		nb.pressed.connect(func(): W.target = want; sfx("click"); render_all())
+		h.add_child(nb)
+	var h2 := _row(v, "board", "식재료")
 	var fl := HFlowContainer.new()
 	fl.add_theme_constant_override("h_separation", 6)
 	fl.add_theme_constant_override("v_separation", 6)
 	fl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	for gr in _counter_groups():
-		var b := _group_btn(gr, false, "%s 0:10" % _group_name(gr))
-		b.pressed.connect(do_plate.bind(gr[0].uid, -1))
+		var b := _group_btn(gr, W.picks.has(gr[0].uid), _group_name(gr))
+		b.pressed.connect(_toggle_pick.bind(gr[0].uid))
 		fl.add_child(b)
 	h2.add_child(fl)
+	var f := hbox(10)
+	f.add_child(spacer())
+	var ok := btn("cloche", "담기", "0:10", "", Vector2(0, 40), 18)
+	dis(ok, _picks().is_empty())
+	ok.pressed.connect(tray_assemble)
+	f.add_child(ok)
+	v.add_child(f)
+
+
+func tray_assemble() -> void:
+	if busy: return
+	var its := _picks()
+	if its.is_empty(): return
+	var target = W.get("target", "plate")
+	sfx("plate")
+	var fn := func():
+		var pid: int = -1 if target is String else int(target)
+		for it in its: pid = g.plate_put(it.uid, pid)
+		if target is String: g.get_plate(pid).kind = target
+		W = {"area": "tray", "picks": [], "target": pid}
+	act(10, "cloche", fn, {"emo": its[0].id})
 
 
 func _rrect_pts(r: Rect2, rad: float) -> PackedVector2Array:
@@ -1024,7 +1077,7 @@ func open_item(u: int) -> void:
 		do_plate(u, W.pid)
 		return
 	if W.get("area", "") == "tray":
-		do_plate(u, -1)
+		_toggle_pick(u)
 		return
 	if W.get("area", "") == "board" and W.get("uid", -1) == u:
 		close_work()
@@ -1423,7 +1476,7 @@ func _plate_token(pl: Dictionary, p: Vector2, cw: float, chh: float) -> void:
 	b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	place(b, p.x, p.y, cw, chh)
 	var sel: bool = W.get("area", "") == "plate" and W.get("pid", -1) == pl.pid
-	var kind := _dish_kind(its)
+	var kind: String = pl.get("kind", _dish_kind(its))
 	var dw := cw - 2.0
 	var dc := Vector2(cw / 2, chh / 2 - 2)
 	b.draw.connect(func():
@@ -1447,6 +1500,12 @@ func _plate_token(pl: Dictionary, p: Vector2, cw: float, chh: float) -> void:
 
 func open_plate(pid: int) -> void:
 	if busy or screen != "play": return
+	# 선반 창에서는 먼저 담을 그릇으로 고른다
+	if W.get("area", "") == "tray" and not (W.get("target") is int and W.target == pid):
+		W.target = pid
+		sfx("click")
+		render_all()
+		return
 	if W.get("area", "") == "plate" and W.get("pid", -1) == pid:
 		close_work(); return
 	W = {"area": "plate", "pid": pid, "picks": []}
@@ -1549,41 +1608,72 @@ func _work_comp(v: VBoxContainer) -> void:
 
 
 # ---------- 탁상 벨: 누르면 쟁반의 접시 전부를 낸다 ----------
-var bell_armed := -100000
-
-
-func _bell_button(sz: float) -> Button:
-	var b := Button.new()
-	b.theme_type_variation = "Flat"
-	b.focus_mode = Control.FOCUS_NONE
-	b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	b.custom_minimum_size = Vector2(sz, sz)
-	b.tooltip_text = "벨 누르기 1:00"
+func _bell_art(sz: float) -> TextureRect:
 	var t := TextureRect.new()
 	t.texture = D.art("bell")
 	t.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	t.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	t.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	place(t, 0, 0, sz, sz)
-	b.add_child(t)
-	juice(b)
+	t.custom_minimum_size = Vector2(sz, sz)
+	return t
+
+
+func _submit_button() -> Button:
+	var b := btn("", "제출", "", "", Vector2(136, 62), 20)
+	var box: HBoxContainer = b.get_meta("box")
+	var t := _bell_art(44.0)
+	box.add_child(t)
+	box.move_child(t, 0)
+	b.tooltip_text = "1:00"
 	return b
 
 
-# 접시에 안 담은 재료가 있으면 한 번 알려 주고, 3초 안에 다시 누르면 낸다
 func press_bell() -> void:
 	if busy or screen != "play" or g.plates.is_empty(): return
-	var left: int = g.items.filter(func(i): return i.plate == null).size()
-	var t_ms := Time.get_ticks_msec()
-	if left > 0 and t_ms - bell_armed > 3000:
-		bell_armed = t_ms
-		sfx("tick")
-		toast("접시 밖 재료 %d" % left, true)
-		return
-	bell_armed = -100000
+	sfx("pop")
+	screen = "modal"
+	modal_kind = "submit"
+	var pv := mod_box(560, 14)
+	var p: PanelContainer = pv[0]
+	var v: VBoxContainer = pv[1]
+	var h := hbox(10)
+	h.add_child(_bell_art(40.0))
+	h.add_child(lbl("제출", 22, D.C_INK, D.F_BL))
+	v.add_child(h)
+	for pl in g.plates:
+		var its := g.plate_items(pl)
+		var row := hbox(6)
+		for it in its.slice(0, 6): row.add_child(emo(it.id, 30))
+		row.add_child(spacer())
+		row.add_child(lbl(g.dish_info(its).name, 16, D.C_INK, D.F_XB))
+		v.add_child(row)
+	var left: Array = g.items.filter(func(i): return i.plate == null)
+	if left.size():
+		var warn := hbox(6)
+		warn.add_child(_tipico("warn", "접시 밖 재료", D.C_WARN, 20))
+		for it in left.slice(0, 10): warn.add_child(emo(it.id, 26))
+		v.add_child(warn)
+	var hb := hbox(10)
+	hb.add_child(spacer())
+	var c := btn("x", "취소", "", "Ghost", Vector2(0, 46), 18)
+	c.tooltip_text = "Esc"
+	c.pressed.connect(close_modal)
+	hb.add_child(c)
+	var ok := btn("check", "확인", "1:00", "", Vector2(0, 46), 18)
+	ok.tooltip_text = "Enter"
+	ok.pressed.connect(submit_ok)
+	hb.add_child(ok)
+	v.add_child(hb)
+	open_ov(p)
+
+
+func submit_ok() -> void:
+	if modal_kind != "submit": return
+	close_ov()
+	screen = "play"
 	W = {}
 	sfx("ding")
-	var groups: Array = g.plates.map(func(p): return p.uids.duplicate())
+	var groups: Array = g.plates.map(func(pl): return pl.uids.duplicate())
 	act(60, "cloche", func(): serve(groups))
 
 
@@ -2638,8 +2728,10 @@ func _input(e: InputEvent) -> void:
 				else: open_menu()
 			else: return
 		"modal":
-			if k == KEY_ESCAPE:
-				if modal_kind == "menu": close_menu()
+			if enter and modal_kind == "submit": submit_ok()
+			elif k == KEY_ESCAPE:
+				if modal_kind == "submit": close_modal()
+				elif modal_kind == "menu": close_menu()
 				elif modal_kind == "load": close_modal()
 				elif modal_kind.begins_with("note:"):
 					var back := modal_kind.substr(5)
@@ -2837,28 +2929,33 @@ func autopilot() -> void:
 	# 김치와 돼지고기를 한 냄비에: 덩어리째 밥 접시로
 	await _shot("08b_comp")
 	open_tray()
-	await _shot("08b2_tray")
-	close_work()
+	W.target = g.plates[0].pid
 	open_item(g.items[0].uid)
-	await _shot("08c_comp_panel")
-	do_plate(g.items[0].uid, g.plates[0].pid)
+	await _shot("08c_tray_panel")
+	tray_assemble()
 	await get_tree().create_timer(1.2).timeout
 	await _shot("08d_assembled")
 	print("DISH ", g.dish_info(g.plate_items(g.plates[0])).name)
+	close_work()
 	var tt = g.items.filter(func(i): return i.id == "tteok")[0]
 	if tt.where != null:
 		take_back(tt.where)
 		await get_tree().create_timer(1.2).timeout
 	do_plate(tt.uid, -1)
 	await get_tree().create_timer(1.2).timeout
+	close_work()
+	open_tray()
+	W.target = "bowl"
 	var on_it = g.items.filter(func(i): return i.id == "onion")[0]
-	do_plate(on_it.uid, -1)
+	open_item(on_it.uid)
+	await _shot("08e_bowl_pick")
+	tray_assemble()
 	await get_tree().create_timer(1.2).timeout
 	close_work()
-	await _shot("08e_tray_three")
+	await _shot("08f_tray_three")
 	press_bell()
-	await _shot("09_armed", 0.4)
-	press_bell()
+	await _shot("09_confirm", 0.4)
+	submit_ok()
 	await get_tree().create_timer(3.5).timeout
 	await _shot("10_result")
 	var plate_btn: Button = null
