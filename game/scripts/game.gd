@@ -837,7 +837,7 @@ static func grade_of(s: int) -> String:
 
 static func judge_line(s: int) -> String:
 	if s >= 90: return "바로 메뉴판에 올립니다"
-	if s >= 80: return "합격. 입사를 축하해요"
+	if s >= 80: return "단골이 생길 맛이에요"
 	if s >= 65: return "조금만 다듬으면 합격"
 	if s >= 50: return "가능성은 보여요"
 	if s >= 30: return "심사위원이 물을 찾습니다"
