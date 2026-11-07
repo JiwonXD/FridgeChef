@@ -1842,17 +1842,16 @@ func render_counter() -> void:
 		for k in n:
 			var key = rows[ri][k].get("plate", null)
 			pos["p%d" % key if key != null else rows[ri][k].uid] = Vector2(k * step, ri * (board.size.y - chh))
-	# 쟁반 위 접시: 3개까지 한 줄, 그 이상은 두 줄
+	# 쟁반 위 접시: 크기 고정, 왼쪽 위부터 3칸씩 두 줄. 더 많으면 겹쳐 놓는다
 	var tr_in: Rect2 = LAYOUT.tray
 	var pn := board_plates.size()
-	var prows := 1 if pn <= 3 else 2
-	var pcols := maxi(1, int(ceil(float(pn) / prows)))
-	var pw: float = 112.0 if pn == 1 else (86.0 if pn == 2 else 60.0)
-	var ph := pw + 6.0
+	var pcols := maxi(3, int(ceil(pn / 2.0)))
+	var pw := 58.0
+	var ph := 64.0
+	var stepx := minf(pw, (tr_in.size.x - 16 - pw) / (pcols - 1))
+	var x0 := tr_in.position.x + (tr_in.size.x - (pw + stepx * (pcols - 1))) / 2.0
+	var y0 := tr_in.position.y + (tr_in.size.y - 4 - ph * 2) / 2.0
 	for k in pn:
-		var stepx := minf(pw, (tr_in.size.x - 16 - pw) / maxf(1, pcols - 1))
-		var x0 := tr_in.position.x + (tr_in.size.x - (pw + stepx * (pcols - 1))) / 2.0
-		var y0 := tr_in.position.y + (tr_in.size.y - 4 - ph * prows) / 2.0
 		_plate_token(board_plates[k], Vector2(x0 + (k % pcols) * stepx, y0 + (k / pcols) * ph) - board.position, pw, ph)
 	for u in comp_rep: _comp_token(comp_rep[u], pos[u], cw, chh)
 	var bd: Rect2 = LAYOUT.board
@@ -2978,7 +2977,11 @@ func autopilot() -> void:
 		await get_tree().create_timer(1.2).timeout
 	do_plate(tt.uid, -1)
 	await get_tree().create_timer(1.2).timeout
+	var on_it = g.items.filter(func(i): return i.id == "onion")[0]
+	do_plate(on_it.uid, -1)
+	await get_tree().create_timer(1.2).timeout
 	close_work()
+	await _shot("08e_tray_three")
 	for pl in g.plates.duplicate():
 		send_plate(pl.pid)
 		await get_tree().create_timer(1.2).timeout
