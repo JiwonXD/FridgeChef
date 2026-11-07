@@ -2191,7 +2191,6 @@ func _note_row(id: String) -> Control:
 		var icons: Array = [ico(D.METH[m].ic, 18, D.C_INK2)]
 		if d[3] != "W": icons.append(ico("c_" + d[3], 16, D.C_INK2))
 		h.add_child(_chip(icons, "%s~%s분" % [D.nf(d[1]), D.nf(d[2])], D.C_INK2, "%s %s %s" % [D.METH[m].n, D.REFLV[m], D.CUT[d[3]].n]))
-	if gi.has("danger"): h.add_child(_chip([ico("warn", 18, D.C_BAD)], "날것", D.C_BAD, "날것은 위험"))
 	if id == "egg": h.add_child(_chip([ico("micro", 18, D.C_BAD), ico("warn", 16, D.C_BAD)], "", D.C_BAD, "껍질째 전자레인지 금지"))
 	row.add_child(h)
 	return row

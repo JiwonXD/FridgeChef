@@ -11,7 +11,7 @@ func _ready() -> void:
 	holdout()
 	false_positive()
 	reachability()
-	safety()
+	taste_only()
 	print("RESULT fails=", fails)
 	get_tree().quit(1 if fails else 0)
 
@@ -179,30 +179,16 @@ func reachability() -> void:
 	print("REACH 미달 총 ", bad, "/10000")
 
 
-# 안전: 위험 재료를 덜 익혀 내면 항상 감점 (USDA FSIS 중심온도표 항목)
-func safety() -> void:
+# 판정은 맛으로만: 안전 규칙 문구와 추가 감점이 없어야 한다
+func taste_only() -> void:
 	var bad := 0
-	var checked := 0
 	for id in D.ING:
-		if not D.ING[id].has("danger"): continue
-		for m in D.ING[id].m:
-			var g := Game.new("t", 0, ["pork"])
-			var it := g.new_item(id)
-			var d := g.mdata(it, m)
-			it.cook[m] = float(d[1]) * 0.3 / g.cut_f(it, m)
-			it.heat[m] = "mid"
-			it.hotEnd = g.now
-			g.items.append(it)
-			var r := g.evaluate([it])
-			var flagged: bool = r.cats[4].notes.any(func(n): return n.text.contains("속까지 안 익음"))
-			checked += 1
-			if not flagged: bad += 1; print("  안전 미감점 ", id, " ", m)
-		var g2 := Game.new("t", 0, ["pork"])
-		var raw := g2.new_item(id)
-		g2.items.append(raw)
-		var r2 := g2.evaluate([raw])
-		checked += 1
-		if not r2.cats[4].notes.any(func(n): return n.text.contains("식중독")):
-			bad += 1; print("  안전 미감점 날것 ", id)
-	check(bad == 0, "안전 규칙")
-	print("SAFETY 검사=", checked, " 미감점=", bad)
+		check(not D.ING[id].has("danger"), "안전 표시 남음 " + id)
+		var g := Game.new("t", 0, ["pork"])
+		var raw := g.new_item(id)
+		g.items.append(raw)
+		for c in g.evaluate([raw]).cats:
+			for n in c.notes:
+				if n.text.contains("위험") or n.text.contains("식중독") or n.text.contains("속까지"): bad += 1
+	check(bad == 0, "안전 문구 남음")
+	print("TASTE 재료=", D.ING.size(), " 안전문구=", bad)

@@ -698,7 +698,7 @@ func evaluate(its: Array) -> Dictionary:
 			var pen := 0 if s >= 2 else (-1 if s == 1 else (-3 if s == 0 else (-5 if s == -1 else (-7 if s == -2 else -12))))
 			sc += pen
 			if it.id == "egg" and not it.cracked and s <= -3: notes.append(_N(pen, "%s 껍질째 %s" % [n, D.METH[p].n]))
-			elif s <= -3: notes.append(_N(pen, "%s 날것 위험" % n))
+			elif s <= -3: notes.append(_N(pen, "%s 날것 맛없음" % n))
 			elif pen <= -5: notes.append(_N(pen, "%s %s 안 어울림" % [n, D.METH[p].n]))
 			elif pen < 0: notes.append(_N(pen, "%s %s보다 나은 방법 있음" % [n, D.METH[p].n]))
 			var lv = it.heat.get(p)
@@ -733,12 +733,10 @@ func evaluate(its: Array) -> Dictionary:
 				var rw := float(g.raw)
 				s = 1.0 if rw >= 1 else (0.6 if rw == 0 else 0.2)
 				if rw < 0: notes.append(_N(-D.jround((1 - s) * 25 / its.size()), "%s 익히지 않음" % n))
-				if g.has("danger"): extra -= 8; notes.append(_N(-8, "%s 날것 식중독 위험" % n))
 			else:
 				s = d.sc
 				var tx := "%s %s %s분, 적정 %s~%s" % [n, d.label, "%.1f" % (floor(d.eq * 10.0 + 0.5) / 10.0), D.nf(d.lo), D.nf(d.hi)]
 				notes.append(_N(0 if s >= 1 else -D.jround((1 - s) * 25 / its.size()), tx))
-				if g.has("danger") and d.eq < d.lo * 0.85: extra -= 8; notes.append(_N(-8, "%s 속까지 안 익음" % n))
 				var he = it.hotEnd
 				var wait := now - (now if he == null else float(he))
 				if it.chill < 480 and wait > 600:

@@ -154,8 +154,8 @@ const gap = GAP.filter((w) => w !== '콩나물').map((w) => {
   return [w, docs.filter((d) => re.test(d.ings || d.title)).length];
 }).sort((a, b) => b[1] - a[1]);
 
-// ---------- 안전 표시 (USDA FSIS 중심온도표의 항목) ----------
-D.ING.clam.danger = 1;
+// 판정은 맛으로만 한다. 안전 표시는 쓰지 않는다.
+for (const id of Object.keys(D.ING)) delete D.ING[id].danger;
 D.P.bell = '<path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/>';
 
 // ---------- 저장 ----------

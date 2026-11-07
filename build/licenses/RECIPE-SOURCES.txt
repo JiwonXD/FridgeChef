@@ -14,5 +14,3 @@
   이용 조건: 공공누리 제1유형(출처 표시)
   출처: https://www.data.go.kr/data/15142529/fileData.do
 
-USDA FSIS Safe Temperature Chart
-  https://www.fsis.usda.gov/food-safety/safe-food-handling-and-preparation/food-safety-basics/safe-temperature-chart
