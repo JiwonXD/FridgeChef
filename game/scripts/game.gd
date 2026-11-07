@@ -19,8 +19,9 @@ var logs: Array = []
 var over := false
 var result := {}
 var events: Array = []   # 화면에 전달할 사건: {k:"toast"|"sfx"|"done", ...}
-var plates: Array = []   # 조립한 접시: {pid, uids}
+var plates: Array = []   # 조립한 접시: {pid, uids, pass}
 var next_pid := 1
+var next_cid := 1        # 구성 요소 번호. 같은 기구에서 함께 조리한 재료는 한 덩어리
 
 
 func _init(nm: String, ti: int = -1, fr: Array = []) -> void:
@@ -37,7 +38,58 @@ static func _shuf(a: Array) -> Array:
 	return b
 
 
+# 냉장고는 레시피 근거가 있는 요리를 만들 수 있어야 한다.
+const MIN_REACH := 5
+const MIN_FIT := 3
+
+
 func make_fridge(th: Dictionary) -> Array:
+	var best: Array = []
+	var best_n := -1
+	for attempt in 40:
+		var fr := _roll_fridge(th)
+		var rr := reachable(fr, th)
+		var n: int = mini(rr.fit, MIN_FIT) * 10 + mini(rr.all, MIN_REACH) + (10 if rr.need_drink_ok else 0)
+		if n > best_n: best = fr; best_n = n
+		if rr.fit >= MIN_FIT and rr.all >= MIN_REACH and rr.need_drink_ok: break
+	return best
+
+
+# 재료 ID 목록으로 만들 수 있는 구성 요소 수. fit은 주제에 맞는 것만 센다.
+static func reachable(fr: Array, th: Dictionary) -> Dictionary:
+	var all := 0
+	var fit := 0
+	var drink := false
+	for p in D.PARTS:
+		if not _need_ok(p, fr): continue
+		all += 1
+		var s := 0.0
+		var nn := 0
+		for x in fr:
+			if _in_need(p, x): s += D.fit_of(th, D.ING[x]); nn += 1
+		var best_m := -9
+		for m in p.m: best_m = maxi(best_m, int(th.m.get(m, 0)))
+		if nn > 0 and s / nn >= 1.0 and best_m >= 0: fit += 1
+		if p.role == "drink": drink = true
+	return {"all": all, "fit": fit, "need_drink_ok": drink or not th.has("drink")}
+
+
+static func _in_need(p: Dictionary, id: String) -> bool:
+	for nd in p.need:
+		if nd.split("|").has(id): return true
+	return false
+
+
+static func _need_ok(p: Dictionary, ids: Array) -> bool:
+	for nd in p.need:
+		var ok := false
+		for alt in nd.split("|"):
+			if ids.has(alt): ok = true; break
+		if not ok: return false
+	return true
+
+
+func _roll_fridge(th: Dictionary) -> Array:
 	var ids: Array = D.ING.keys()
 	var pick: Array = []
 	for i in _shuf(ids.filter(func(x): return D.fit_of(th, D.ING[x]) >= 5)).slice(0, 6): pick.append(i)
@@ -75,7 +127,7 @@ func get_item(u: int):
 
 func new_item(id: String) -> Dictionary:
 	var it := {"uid": uid, "id": id, "cut": "W", "washed": false, "peeled": false, "cracked": false, "battered": false, "mashed": false,
-		"seas": [], "cook": {}, "heat": {}, "blend": 0.0, "chill": 0.0, "mar": 0.0, "hotEnd": null, "where": null, "exploded": false, "dry": false, "plate": null}
+		"seas": [], "cook": {}, "heat": {}, "blend": 0.0, "chill": 0.0, "mar": 0.0, "hotEnd": null, "where": null, "exploded": false, "dry": false, "plate": null, "comp": null}
 	uid += 1
 	return it
 
@@ -252,6 +304,12 @@ func discard(u: int) -> void:
 	add_log("%s 버림" % D.ING[it.id].n)
 
 
+func discard_comp(u: int) -> void:
+	var it = get_item(u)
+	if it == null: return
+	for o in siblings(it): discard(o.uid)
+
+
 func sel_counter() -> Array:
 	var out := []
 	for u in sel:
@@ -273,7 +331,7 @@ func plate_put(u: int, pid: int) -> int:
 	plate_take(u)
 	var pl = get_plate(pid)
 	if pl == null:
-		pl = {"pid": next_pid, "uids": []}
+		pl = {"pid": next_pid, "uids": [], "pass": false}
 		next_pid += 1
 		plates.append(pl)
 	pl.uids.append(u)
@@ -295,6 +353,161 @@ func plate_items(pl: Dictionary) -> Array:
 	return pl.uids.map(func(u): return get_item(u)).filter(func(x): return x != null)
 
 
+# 같은 덩어리 재료 (같은 자리에 함께 놓인 것만)
+func siblings(it: Dictionary) -> Array:
+	if it.comp == null: return [it]
+	return items.filter(func(o): return o.comp == it.comp and o.where == null and o.plate == it.plate)
+
+
+func plate_put_comp(u: int, pid: int) -> int:
+	var it = get_item(u)
+	if it == null or it.where != null: return -1
+	var np := pid
+	for o in siblings(it):
+		np = plate_put(o.uid, np)
+	return np
+
+
+func plate_take_comp(u: int) -> void:
+	var it = get_item(u)
+	if it == null: return
+	for o in siblings(it): plate_take(o.uid)
+
+
+func set_pass(pid: int, on: bool) -> void:
+	var pl = get_plate(pid)
+	if pl != null: pl.pass = on
+
+
+func passed_plates() -> Array:
+	return plates.filter(func(p): return p.pass)
+
+
+# ---------- 구성 요소와 조립 인식 ----------
+# 접시의 재료를 덩어리로 나눈다. 익히지 않은 재료는 함께 버무린 한 덩어리로 본다.
+func comp_groups(its: Array) -> Array:
+	var by := {}
+	var order := []
+	for it in its:
+		var key = it.comp if it.comp != null else "raw"
+		if not by.has(key): by[key] = []; order.append(key)
+		by[key].append(it)
+	return order.map(func(k): return by[k])
+
+
+func _group_method(gr: Array) -> String:
+	var tally := {}
+	var best := "raw"
+	var bv := 0
+	for it in gr:
+		var m := primary(it)
+		if it.blend >= 20: m = "blend"
+		elif m == "raw" and it.chill >= 480: m = "chill"
+		tally[m] = int(tally.get(m, 0)) + 1
+		if tally[m] > bv: bv = tally[m]; best = m
+	return best
+
+
+# 덩어리 하나를 구성 요소로 판별한다. near는 재료는 맞지만 조리법이 다른 경우.
+func match_part(gr: Array, prefer_wrap: bool = false) -> Dictionary:
+	var ids := _uniq(gr.map(func(i): return i.id))
+	var seas := []
+	for i in gr: seas.append_array(i.seas)
+	var m := _group_method(gr)
+	var best = null
+	var bs := -INF
+	var near = null
+	var ns := -INF
+	for p in D.PARTS:
+		if not Game._need_ok(p, ids): continue
+		if p.has("sea") and not p.sea.any(func(x): return seas.has(x)): continue
+		var inside := 0
+		var hits := 0
+		var extra := 0
+		var veg := 0
+		for x in ids:
+			if Game._in_need(p, x): inside += 1
+			elif p.opt.has(x): hits += 1
+			elif D.AROMA.has(x): pass
+			elif D.ING[x].cat == "veg": veg += 1    # 채소는 더 들어가도 같은 요리
+			else: extra += 1
+		if extra > 2 or (extra > 0 and p.need.size() < 2 and extra > 1): continue
+		var sc: float = p.need.size() * 3.0 + mini(inside, p.need.size()) + hits - extra * 2.0 - veg * 0.5 + (1.0 if p.has("sea") else 0.0)
+		if prefer_wrap and p.role == "wrap": sc += 2.0
+		if p.role == "soup" and m == "boil": sc += 0.5
+		if p.m.has(m):
+			if sc > bs: bs = sc; best = p
+		elif sc > ns and (p.has("sea") or p.need.size() > 1): ns = sc; near = p    # 양념까지 맞췄을 때만 그 요리를 노린 것으로 본다
+	return {"part": best, "near": near if best == null else null, "m": m, "group": gr}
+
+
+func _josa(w: String) -> String:
+	if w.is_empty(): return "와"
+	var c := w.unicode_at(w.length() - 1)
+	if c < 0xAC00 or c > 0xD7A3: return "와"
+	return "과" if (c - 0xAC00) % 28 != 0 else "와"
+
+
+# 접시 전체를 요리로 인식한다. tier 2 조립 요리, 1 구성 요소만, 0 레시피 없음
+func dish_info(its: Array) -> Dictionary:
+	if its.is_empty(): return {"name": "빈 접시", "tier": 0, "parts": [], "near": []}
+	var groups := comp_groups(its)
+	var pre := groups.map(func(gr): return match_part(gr))
+	var has_main: bool = pre.any(func(x): return x.part != null and x.part.role == "main")
+	var ms: Array = groups.map(func(gr): return match_part(gr, has_main))
+	var parts: Array = ms.filter(func(x): return x.part != null).map(func(x): return x.part)
+	var near: Array = ms.filter(func(x): return x.near != null)
+	if parts.is_empty(): return {"name": dish_name(its), "tier": 0, "parts": [], "near": near, "matches": ms}
+	# 정체를 알 수 없는 덩어리가 섞이면 조립 요리로 치지 않는다 (양념 채소만 있는 덩어리는 괜찮다)
+	var strays: Array = ms.filter(func(x): return x.part == null and not x.group.all(func(i): return D.AROMA.has(i.id)))
+	if strays.size():
+		return {"name": "%s 곁들임" % parts[0].n, "tier": 1, "parts": parts, "near": near, "matches": ms}
+	var pid: Array = parts.map(func(p): return p.id)
+	# 이름 있는 조립: 가장 많은 구성 요소를 쓰는 것
+	var named = null
+	for dd in D.DISHES:
+		var ok := true
+		for slot in dd.parts:
+			var hit := false
+			for alt in slot.split("|"):
+				if pid.has(alt): hit = true; break
+			if not hit: ok = false; break
+		if ok and (named == null or dd.parts.size() > named.parts.size()): named = dd
+	if named != null: return {"name": named.n, "tier": 2, "parts": parts, "near": near, "matches": ms, "dish": named}
+	# 역할 규칙
+	var roles := {}
+	for p in parts:
+		if not roles.has(p.role): roles[p.role] = []
+		roles[p.role].append(p)
+	for tp in D.TEMPLATES:
+		var ok := true
+		for r in tp.req:
+			if roles.get(r, []).size() < int(tp.req[r]): ok = false; break
+		if not ok: continue
+		var main = roles.get("main", [null])[0]
+		var soup = roles.get("soup", [null])[0]
+		var side = roles.get("side", [null])[0]
+		# 줄기가 있는 주요리를 앞세운다 (데친 낙지 + 낙지볶음이면 낙지볶음)
+		for p in roles.get("main", []):
+			if p.has("stem"): main = p; break
+		for p in roles.get("side", []):
+			if p.has("stem"): side = p; break
+		if tp.get("over", false):
+			var src = main if tp.req.has("main") else side
+			if src == null or not src.has("stem"): continue
+		if tp.get("gb", false) and (soup == null or not soup.has("gb")): continue
+		var nm := String(tp.n)
+		if main != null: nm = nm.replace("{main}", main.n).replace("{stem}", main.get("stem", main.n))
+		if side != null: nm = nm.replace("{side}", side.n).replace("{stem}", side.get("stem", side.n))
+		if soup != null: nm = nm.replace("{soup}", soup.n).replace("{gb}", soup.get("gb", soup.n))
+		return {"name": nm, "tier": 2, "parts": parts, "near": near, "matches": ms, "template": tp}
+	var nm2 := String(parts[0].n)
+	for k in range(1, parts.size()):
+		if k < 2: nm2 += "%s %s" % [_josa(nm2), parts[k].n]
+	if parts.size() > 2: nm2 += " 외 %d가지" % (parts.size() - 2)
+	return {"name": nm2, "tier": 1, "parts": parts, "near": near, "matches": ms}
+
+
 # ---------- 조리 기구 ----------
 # vk: 예열 상태 키 (화구는 "도구/준비", 오븐은 "oven", 나머지는 "")
 func pre_for(aid: String, vk: String, lv: String, join_pre: bool) -> float:
@@ -313,15 +526,22 @@ func start_session(aid: String, method: String, lv: String, T: float, pre_only: 
 		s = st.s; s.T = T; s.end = s.cookStart + T; s.method = method
 	else:
 		var pr := vk.split("/")[1] if vk.contains("/") else ""
-		s = {"method": method, "lv": lv, "T": 0.0 if pre_only else T, "start": now, "cookStart": now + pre, "items": [], "added": {}, "vk": vk, "prep": pr}
+		s = {"method": method, "lv": lv, "T": 0.0 if pre_only else T, "start": now, "cookStart": now + pre, "items": [], "added": {}, "vk": vk, "prep": pr, "cid": next_cid}
+		next_cid += 1
 		s.end = s.cookStart + s.T
 		if st.hot != vk: st.hot = null
 		st.s = s
 	for it in its:
 		s.items.append(it.uid); s.added[it.uid] = now; it.where = aid
+		_join_comp(it, s)
 	if pre_only: add_log("%s %s" % [a.n, D.vk_pre_n(vk)])
 	else: add_log("%s %s %s %s" % [a.n, " ".join(its.map(func(i): return D.ING[i.id].n)), D.METH[s.method].n, D.fmt(s.T)])
 	for it in its: sel.erase(it.uid)
+
+
+# 조리, 갈기는 재료를 한 덩어리로 묶는다. 냉동, 재우기는 묶지 않는다.
+func _join_comp(it: Dictionary, s: Dictionary) -> void:
+	if D.COOKM.has(s.method) or s.method == "blend": it.comp = s.cid
 
 
 func add_to_session(aid: String, its: Array) -> void:
@@ -329,6 +549,7 @@ func add_to_session(aid: String, its: Array) -> void:
 	var s = apps[aid].s
 	for it in its:
 		s.items.append(it.uid); s.added[it.uid] = now; it.where = aid
+		_join_comp(it, s)
 	add_log("%s %s 추가" % [a.n, " ".join(its.map(func(i): return D.ING[i.id].n))])
 	for it in its: sel.erase(it.uid)
 
@@ -349,10 +570,12 @@ func _uniq(a: Array) -> Array:
 	return o
 
 
-func evaluate(its: Array, groups: Array = []) -> Dictionary:
+# 접시 하나 채점
+func evaluate(its: Array) -> Dictionary:
 	var th := theme
+	var info := dish_info(its)
 	var cats := []
-	if its.is_empty(): return {"cats": [], "total": 0, "empty": true}
+	if its.is_empty(): return {"cats": [], "total": 0, "empty": true, "dish": info}
 	var ids := _uniq(its.map(func(i): return i.id))
 	var seas_all := []
 	for i in its: seas_all.append_array(i.seas)
@@ -407,16 +630,8 @@ func evaluate(its: Array, groups: Array = []) -> Dictionary:
 
 	# 2) 궁합 15 (같은 접시에 담긴 것끼리만)
 	if true:
-		if groups.is_empty(): groups = [its.map(func(i): return i.uid)]
-		var sets := []
-		var biggest := 0
-		for gr in groups:
-			var gi: Array = its.filter(func(i): return gr.has(i.uid))
-			var gs := []
-			for i in gi: gs.append_array(i.seas)
-			var st: Array = _uniq(gi.map(func(i): return i.id)) + _uniq(gs)
-			sets.append(st)
-			biggest = maxi(biggest, st.size())
+		var sets := [ids + seas]
+		var biggest: int = sets[0].size()
 		var sc := 4 if biggest < 2 else 9
 		var notes := []
 		var good := 0
@@ -432,7 +647,9 @@ func evaluate(its: Array, groups: Array = []) -> Dictionary:
 					var A := _pn(all[i]); var B := _pn(all[j])
 					if p > 0: good += 1; sc += 3; notes.append(_N(3, "%s + %s" % [A, B]))
 					elif p < 0: sc -= 5; notes.append(_N(-5, "%s + %s 안 어울림" % [A, B]))
-		if biggest < 2: notes.append(_N(0, "한 접시에 재료 하나뿐" if groups.size() > 1 else "재료 하나뿐"))
+		if info.tier == 2: sc += 6; notes.push_front(_N(6, "%s 조립" % info.name))
+		elif info.tier == 1: sc += 2; notes.push_front(_N(2, info.name))
+		if biggest < 2: notes.append(_N(0, "재료 하나뿐"))
 		elif good == 0: notes.append(_N(0, "특별한 궁합 없음"))
 		cats.append({"n": "궁합", "max": 15, "sc": clampi(sc, 0, 15), "notes": notes})
 
@@ -456,6 +673,12 @@ func evaluate(its: Array, groups: Array = []) -> Dictionary:
 			if it.blend >= 20 and not g.has("blend"): sc -= 3; notes.append(_N(-3, "%s 갈면 안 돼요" % n))
 			if g.has("prot") and it.mar >= 600 and it.seas.size(): bonus += 2; notes.append(_N(2, "%s 양념에 재움" % n))
 			if it.mashed and p != "raw" and it.id == "potato": bonus += 1; notes.append(_N(1, "%s 으깨기" % n))
+		for mt in info.get("matches", []):
+			if mt.part == null or not mt.part.has("cut"): continue
+			for it in mt.group:
+				var want: String = mt.part.cut.get(it.id, "")
+				if want != "" and it.cut != want and not it.mashed:
+					sc -= 2; notes.append(_N(-2, "%s %s" % [_nm(it), D.CUT[want].n]))
 		sc = clampi(sc + bonus, 0, 15)
 		if notes.is_empty(): notes.append(_N(0, "손질 깔끔"))
 		cats.append({"n": "손질", "max": 15, "sc": sc, "notes": notes})
@@ -489,6 +712,9 @@ func evaluate(its: Array, groups: Array = []) -> Dictionary:
 			for r in rules:
 				if heat_noted.has(r[0]): continue
 				heat_noted[r[0]] = true; sc += r[1]; notes.append(_N(r[1], r[2]))
+		for mt in info.get("near", []):
+			sc -= 3
+			notes.append(_N(-3, "%s %s" % [mt.near.n, D.METH[mt.near.m[0]].n]))
 		if not notes.any(func(x): return x.pts < 0): notes.push_front(_N(0, "재료에 맞는 조리법"))
 		cats.append({"n": "조리법", "max": 15, "sc": clampi(sc, 0, 15), "notes": notes})
 
@@ -535,14 +761,9 @@ func evaluate(its: Array, groups: Array = []) -> Dictionary:
 			if o.k > 1: o.text = "%s x%d" % [o.text, o.k]
 			merged.append(o)
 		c.notes = merged
-	# 골라 놓고 접시에 안 올린 재료
-	var unused := picks.filter(func(id): return not ids.has(id))
-	if unused.size():
-		var pen: int = unused.size() * 4
-		cats.append({"n": "남긴 재료", "max": 0, "sc": -pen, "notes": [_N(-pen, ", ".join(unused.map(func(id): return D.ING[id].n)))]})
 	var total := 0
 	for c in cats: total += c.sc
-	return {"cats": cats, "total": maxi(0, total)}
+	return {"cats": cats, "total": maxi(0, total), "dish": info}
 
 
 func _pn(id: String) -> String:
@@ -641,22 +862,59 @@ static func chef_title(s: int) -> String:
 	return "요리 새싹"
 
 
-func serve(uids: Array, groups: Array = []) -> Dictionary:
+# 접시마다 채점하고, 재료 수로 가중 평균해 한 판 점수를 낸다.
+func serve(groups: Array) -> Dictionary:
 	over = true
-	var its: Array = uids.map(func(u): return get_item(u)).filter(func(x): return x != null)
-	if groups.is_empty(): groups = [its.map(func(i): return i.uid)]
-	var res := evaluate(its, groups)
+	var pls := []
+	var its := []
+	for gr in groups:
+		var pi: Array = gr.map(func(u): return get_item(u)).filter(func(x): return x != null)
+		if pi.is_empty(): continue
+		var r := evaluate(pi)
+		pls.append({"items": pi, "res": r, "name": r.dish.name})
+		its.append_array(pi)
+	pls.sort_custom(func(a, b): return a.items.size() > b.items.size())
+	var res := {"cats": [], "total": 0}
+	if pls.is_empty(): res.empty = true
+	else:
+		var weight := 0.0
+		for pl in pls: weight += pl.items.size()
+		for ci in pls[0].res.cats.size():
+			var c0: Dictionary = pls[0].res.cats[ci]
+			var s := 0.0
+			var notes := []
+			var seen := {}
+			for pl in pls:
+				s += float(pl.res.cats[ci].sc) * pl.items.size() / weight
+				for nt in pl.res.cats[ci].notes:
+					if seen.has(nt.text): continue
+					seen[nt.text] = true
+					notes.append(nt)
+			res.cats.append({"n": c0.n, "max": c0.max, "sc": D.jround(s), "notes": notes})
+		var ids := _uniq(its.map(func(i): return i.id))
+		var unused := picks.filter(func(id): return not ids.has(id))
+		var leftover := {}
+		if unused.size():
+			var pen: int = unused.size() * 4
+			leftover = {"n": "남긴 재료", "max": 0, "sc": -pen, "notes": [_N(-pen, ", ".join(unused.map(func(id): return D.ING[id].n)))]}
+			res.cats.append(leftover)
+		var total := 0
+		for c in res.cats: total += c.sc
+		res.total = maxi(0, total)
+		res.leftover = leftover
 	var remain := LIMIT - now
 	var bonus := 0 if res.has("empty") else mini(5, int(floor(remain / 240.0)))
-	var pls: Array = groups.map(func(gr): return its.filter(func(i): return gr.has(i.uid))).filter(func(a): return not a.is_empty())
-	pls.sort_custom(func(a, b): return a.size() > b.size())
-	var dish := dish_name(pls[0]) if pls.size() else dish_name(its)
+	var dish: String = pls[0].name if pls.size() else "빈 접시"
 	if pls.size() > 1: dish = "%s 외 %d접시" % [dish, pls.size() - 1]
 	result = {"res": res, "bonus": bonus, "score": int(res.total) + bonus, "dish": dish, "items": its, "plates": pls, "remain": remain}
 	return result
 
 
-func time_over_items() -> Array:
+# 시간이 끝나면 패스 위 접시를 낸다. 패스가 비었으면 접시 전부, 접시도 없으면 조리대 전부를 한 접시로.
+func time_over_groups() -> Array:
 	for a in D.APPS:
 		if apps[a.id].s != null: finish_session(a, true)
-	return items.map(func(i): return i.uid)
+	var src := passed_plates()
+	if src.is_empty(): src = plates
+	if src.is_empty(): return [items.map(func(i): return i.uid)]
+	return src.map(func(p): return p.uids.duplicate())

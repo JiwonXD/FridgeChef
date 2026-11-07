@@ -787,9 +787,16 @@ func build_game() -> void:
 	wnext.pressed.connect(_wait_next)
 	dev.add_child(wnext)
 	dev.size.x = bx
-	serve_btn = btn("cloche", "제출", "", "", Vector2(cw - bx - 12, 62), 24)
-	place(serve_btn, cx + bx + 12, ty)
-	serve_btn.pressed.connect(open_serve)
+	serve_btn = Button.new()
+	serve_btn.theme_type_variation = "Flat"
+	serve_btn.focus_mode = Control.FOCUS_NONE
+	serve_btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	serve_btn.tooltip_text = "패스"
+	place(serve_btn, cx + bx + 12, ty, cw - bx - 12, 62)
+	serve_btn.draw.connect(_draw_pass)
+	serve_btn.mouse_entered.connect(serve_btn.queue_redraw)
+	serve_btn.mouse_exited.connect(serve_btn.queue_redraw)
+	serve_btn.pressed.connect(open_pass)
 	r.add_child(serve_btn)
 	# 작업 패널 (영역을 눌렀을 때)
 	acts = Panel.new()
@@ -920,10 +927,15 @@ func open_item(u: int) -> void:
 	if W.get("area", "") == "plate":
 		do_plate(u, W.pid)
 		return
+	if W.get("area", "") == "pass":
+		W = {}
 	if W.get("area", "") == "board" and W.get("uid", -1) == u:
 		close_work()
 		return
-	W = {"area": "board", "uid": u, "picks": []}
+	if W.get("area", "") == "comp" and g.siblings(it).any(func(o): return o.uid == W.get("uid", -1)):
+		close_work()
+		return
+	W = {"area": "comp" if g.siblings(it).size() > 1 else "board", "uid": u, "picks": []}
 	sfx("pop")
 	render_all()
 
@@ -938,9 +950,12 @@ func _toggle_pick(u: int) -> void:
 	var it = g.get_item(u)
 	if it == null or it.where != null: return
 	if not _pick_ok(it): sfx("buzz"); return
-	if W.picks.has(u): W.picks.erase(u)
-	else: W.picks.append(u)
-	sfx("pop" if W.picks.has(u) else "click")
+	# 한 덩어리는 함께 움직인다
+	var on: bool = not W.picks.has(u)
+	for o in g.siblings(it):
+		if on and not W.picks.has(o.uid): W.picks.append(o.uid)
+		elif not on: W.picks.erase(o.uid)
+	sfx("pop" if on else "click")
 	render_all()
 
 
@@ -967,6 +982,8 @@ func render_work() -> void:
 	acts.add_child(v)
 	if area == "board": _work_board(v) if W.uid >= 0 else _work_board_pick(v)
 	elif area == "plate": _work_plate(v)
+	elif area == "comp": _work_comp(v)
+	elif area == "pass": _work_pass(v)
 	elif area == "sink": _work_sink(v)
 	else:
 		var st: Dictionary = g.apps[area]
@@ -1053,22 +1070,49 @@ func _picker(v: VBoxContainer, tip: String) -> void:
 	fl.add_theme_constant_override("h_separation", 6)
 	fl.add_theme_constant_override("v_separation", 6)
 	fl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	for it in g.items:
-		if it.where != null or it.plate != null: continue
-		var on: bool = W.picks.has(it.uid)
-		var b := Button.new()
-		b.theme_type_variation = "OptOn" if on else "Opt"
-		b.focus_mode = Control.FOCUS_NONE
-		b.custom_minimum_size = Vector2(44, 40)
-		b.tooltip_text = D.ING[it.id].n
-		b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-		var e := emo(it.id, 30)
-		place(e, 7, 5, 30, 30)
-		b.add_child(e)
+	for gr in _counter_groups():
+		var it: Dictionary = gr[0]
+		var b := _group_btn(gr, W.picks.has(it.uid), _group_name(gr), 30)
 		if not _pick_ok(it): dis(b, true)
 		else: b.pressed.connect(_toggle_pick.bind(it.uid))
 		fl.add_child(b)
 	h.add_child(fl)
+
+
+# 조리대 위 재료를 덩어리로 묶어서 돌려준다
+func _counter_groups() -> Array:
+	var out := []
+	var seen := {}
+	for it in g.items:
+		if it.where != null or it.plate != null: continue
+		if it.comp != null:
+			if seen.has(it.comp): continue
+			seen[it.comp] = true
+		out.append(g.siblings(it))
+	return out
+
+
+func _group_name(gr: Array) -> String:
+	var mt := g.match_part(gr)
+	if mt.part != null: return mt.part.n
+	return " ".join(gr.map(func(i): return D.ING[i.id].n))
+
+
+func _group_btn(gr: Array, on: bool, tip: String, es: int = 36) -> Button:
+	var b := Button.new()
+	b.theme_type_variation = "OptOn" if on else "Opt"
+	b.focus_mode = Control.FOCUS_NONE
+	b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	b.tooltip_text = tip
+	var n := mini(4, gr.size())
+	var step := es - 8 if n > 1 else es
+	b.custom_minimum_size = Vector2(14 + es + (n - 1) * step, es + 10)
+	for k in n:
+		var e := emo(gr[k].id, es)
+		place(e, 7 + k * step, 5, es, es)
+		b.add_child(e)
+	juice(b)
+	return b
 
 
 func _picks() -> Array:
@@ -1232,6 +1276,7 @@ func _work_board(v: VBoxContainer) -> void:
 	nb.pressed.connect(do_plate.bind(it.uid, -1))
 	r3.add_child(nb)
 	for pq in g.plates:
+		if pq.pass: continue
 		var pb := _plate_btn(pq)
 		pb.pressed.connect(do_plate.bind(it.uid, pq.pid))
 		r3.add_child(pb)
@@ -1250,19 +1295,6 @@ func _work_board(v: VBoxContainer) -> void:
 	r2.add_child(grid)
 
 
-func _groups_for(uids: Array) -> Array:
-	# 조립 접시는 그대로, 접시 없이 낸 재료는 한 접시로
-	var groups := []
-	var rest := uids.duplicate()
-	for pl in g.plates:
-		var gr: Array = pl.uids.filter(func(u): return uids.has(u))
-		if gr.is_empty(): continue
-		groups.append(gr)
-		for u in gr: rest.erase(u)
-	if rest.size(): groups.append(rest)
-	return groups
-
-
 func _plate_btn(pl: Dictionary) -> Button:
 	var b := Button.new()
 	b.theme_type_variation = "Soft"
@@ -1270,7 +1302,7 @@ func _plate_btn(pl: Dictionary) -> Button:
 	b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	var its := g.plate_items(pl)
 	b.custom_minimum_size = Vector2(16 + 26 * mini(4, its.size()), 40)
-	b.tooltip_text = "%s 0:10" % g.dish_name(its)
+	b.tooltip_text = "%s 0:10" % g.dish_info(its).name
 	for k in mini(4, its.size()):
 		var e := emo(its[k].id, 24); place(e, 8 + k * 26, 8, 24, 24); b.add_child(e)
 	juice(b)
@@ -1306,7 +1338,7 @@ func _plate_token(pl: Dictionary, p: Vector2, cw: float, chh: float) -> void:
 		if n == 1: q = Vector2(cw / 2, 30) - Vector2(17, 17)
 		place(e, q.x, q.y, e.custom_minimum_size.x, e.custom_minimum_size.y)
 		b.add_child(e)
-	b.tooltip_text = g.dish_name(its)
+	b.tooltip_text = g.dish_info(its).name
 	b.pressed.connect(open_plate.bind(pl.pid))
 	board.add_child(b)
 
@@ -1335,7 +1367,7 @@ func do_plate(u: int, pid: int) -> void:
 	if pid >= 0 and it.plate == pid: return
 	sfx("plate")
 	var fn := func():
-		var np := g.plate_put(u, pid)
+		var np := g.plate_put_comp(u, pid)
 		W = {"area": "plate", "pid": np, "picks": []}
 	act(10, "cloche", fn, {"emo": it.id})
 
@@ -1347,17 +1379,11 @@ func _work_board_pick(v: VBoxContainer) -> void:
 	fl.add_theme_constant_override("h_separation", 6)
 	fl.add_theme_constant_override("v_separation", 6)
 	fl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	for it in g.items:
-		if it.where != null or it.plate != null: continue
-		var b := Button.new()
-		b.theme_type_variation = "Opt"
-		b.focus_mode = Control.FOCUS_NONE
-		b.custom_minimum_size = Vector2(52, 48)
-		b.tooltip_text = D.ING[it.id].n
-		b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-		var e := emo(it.id, 36); place(e, 8, 6, 36, 36); b.add_child(e)
-		var u: int = it.uid
-		b.pressed.connect(func(): W = {"area": "board", "uid": u, "picks": []}; sfx("pop"); render_all())
+	for gr in _counter_groups():
+		var b := _group_btn(gr, false, _group_name(gr))
+		var u: int = gr[0].uid
+		var ar := "comp" if gr.size() > 1 else "board"
+		b.pressed.connect(func(): W = {"area": ar, "uid": u, "picks": []}; sfx("pop"); render_all())
 		fl.add_child(b)
 	h.add_child(fl)
 
@@ -1366,36 +1392,173 @@ func _work_plate(v: VBoxContainer) -> void:
 	var pl = g.get_plate(W.pid)
 	if pl == null: W = {}; render_work(); return
 	var its := g.plate_items(pl)
-	_work_head(v, ico("cloche", 30, D.C_INK), g.dish_name(its))
-	var h := _row(v, "cloche", "담긴 재료")
-	for it in its:
-		var b := Button.new()
-		b.theme_type_variation = "OptOn"
-		b.focus_mode = Control.FOCUS_NONE
-		b.custom_minimum_size = Vector2(52, 48)
-		b.tooltip_text = "%s 빼기" % D.ING[it.id].n
-		b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-		var e := emo(it.id, 36); place(e, 8, 6, 36, 36); b.add_child(e)
-		var u: int = it.uid
-		b.pressed.connect(func(): g.plate_take(u); sfx("click"); render_all())
+	var info := g.dish_info(its)
+	var ex := []
+	if info.tier == 2: ex.append(_tipico("check", "레시피 조립", D.C_OK, 20))
+	var send := btn("bell", "", "0:10", "Soft", Vector2(0, 32), 16)
+	send.tooltip_text = "패스에 올리기"
+	send.pressed.connect(send_plate.bind(pl.pid))
+	ex.append(send)
+	_work_head(v, ico("cloche", 30, D.C_INK), info.name, ex)
+	var h := _row(v, "cloche", "담긴 구성 요소")
+	for gr in g.comp_groups(its):
+		var b := _group_btn(gr, true, "%s 내리기" % _group_name(gr))
+		var u: int = gr[0].uid
+		b.pressed.connect(func():
+			if gr[0].comp == null:
+				for o in gr: g.plate_take(o.uid)
+			else: g.plate_take_comp(u)
+			if g.get_plate(pl.pid) == null: W = {}
+			sfx("click"); render_all())
 		h.add_child(b)
 	var h2 := _row(v, "plus", "더 담기")
 	var fl := HFlowContainer.new()
 	fl.add_theme_constant_override("h_separation", 6)
 	fl.add_theme_constant_override("v_separation", 6)
 	fl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	for it in g.items:
-		if it.where != null or it.plate != null: continue
-		var b := Button.new()
-		b.theme_type_variation = "Opt"
-		b.focus_mode = Control.FOCUS_NONE
-		b.custom_minimum_size = Vector2(52, 48)
-		b.tooltip_text = "%s 담기 0:10" % D.ING[it.id].n
-		b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-		var e := emo(it.id, 36); place(e, 8, 6, 36, 36); b.add_child(e)
-		b.pressed.connect(do_plate.bind(it.uid, pl.pid))
+	for gr in _counter_groups():
+		var b := _group_btn(gr, false, "%s 담기 0:10" % _group_name(gr))
+		b.pressed.connect(do_plate.bind(gr[0].uid, pl.pid))
 		fl.add_child(b)
 	h2.add_child(fl)
+
+
+func _work_comp(v: VBoxContainer) -> void:
+	var it = g.get_item(W.uid)
+	if it == null: W = {}; render_work(); return
+	var gr := g.siblings(it)
+	var ex := []
+	for o in gr:
+		var d := g.doneness(o)
+		var e := emo(o.id, 26)
+		e.tooltip_text = "%s  %s" % [D.ING[o.id].n, d.label]
+		e.mouse_filter = Control.MOUSE_FILTER_PASS
+		ex.append(e)
+	var del := btn("trash", "", "", "Soft", Vector2(36, 32), 16)
+	del.tooltip_text = "버리기"
+	del.get_meta("box").get_child(0).modulate = D.C_BAD
+	del.pressed.connect(func(): W = {}; g.discard_comp(it.uid); sfx("click"); render_all())
+	ex.append(del)
+	_work_head(v, ico("cloche", 30, D.C_INK), _group_name(gr), ex)
+	var r3 := _row(v, "cloche", "접시에 담기")
+	var nb := btn("plus", "", "0:10", "Soft", Vector2(0, 40), 14)
+	nb.tooltip_text = "새 접시"
+	nb.pressed.connect(do_plate.bind(it.uid, -1))
+	r3.add_child(nb)
+	for pq in g.plates:
+		if pq.pass: continue
+		var pb := _plate_btn(pq)
+		pb.pressed.connect(do_plate.bind(it.uid, pq.pid))
+		r3.add_child(pb)
+
+
+# ---------- 패스: 완성한 접시를 올리고 종을 친다 ----------
+func open_pass() -> void:
+	if busy or screen != "play": return
+	if W.get("area", "") == "pass":
+		close_work(); return
+	W = {"area": "pass", "picks": []}
+	sfx("pop")
+	render_all()
+
+
+func send_plate(pid: int) -> void:
+	if busy: return
+	var pl = g.get_plate(pid)
+	if pl == null: return
+	sfx("plate")
+	var fn := func():
+		g.set_pass(pid, true)
+		W = {"area": "pass", "picks": []}
+	act(10, "cloche", fn)
+
+
+func _work_pass(v: VBoxContainer) -> void:
+	_work_head(v, ico("bell", 28, D.C_INK), "패스")
+	var pp := g.passed_plates()
+	var h := _row(v, "bell", "패스 위 접시")
+	for pl in pp:
+		var its := g.plate_items(pl)
+		var b := _group_btn(its, true, "%s 내리기" % g.dish_info(its).name)
+		var pid: int = pl.pid
+		b.pressed.connect(func(): g.set_pass(pid, false); sfx("click"); render_all())
+		h.add_child(b)
+	var rest: Array = g.plates.filter(func(p): return not p.pass)
+	if rest.size():
+		var h2 := _row(v, "cloche", "조리대 접시")
+		for pl in rest:
+			var its := g.plate_items(pl)
+			var b := _group_btn(its, false, "%s 올리기 0:10" % g.dish_info(its).name)
+			b.pressed.connect(send_plate.bind(pl.pid))
+			h2.add_child(b)
+	v.add_child(spacer())
+	var f := hbox(10)
+	var cooking := D.APPS.filter(func(a): return g.apps[a.id].s != null and g.apps[a.id].s.items.size() > 0)
+	for a in cooking: f.add_child(_tipico(a.ic, "%s 조리 중" % a.n, D.C_WARN, 22))
+	var served := []
+	for pl in pp: served.append_array(pl.uids)
+	var left := g.items.filter(func(i): return not served.has(i.uid))
+	if left.size(): f.add_child(_chip([ico("warn", 18, D.C_WARN)], str(left.size()), D.C_WARN, "패스에 없는 재료"))
+	f.add_child(spacer())
+	var bell := btn("bell", "", "1:00", "", Vector2(0, 46), 22)
+	bell.tooltip_text = "종 치기"
+	dis(bell, pp.is_empty())
+	bell.pressed.connect(ring_bell)
+	f.add_child(bell)
+	v.add_child(f)
+
+
+func ring_bell() -> void:
+	if busy: return
+	var pp := g.passed_plates()
+	if pp.is_empty(): return
+	var groups: Array = pp.map(func(p): return p.uids.duplicate())
+	W = {}
+	sfx("ding")
+	act(60, "cloche", func(): serve(groups))
+
+
+# 스테인리스 패스 선반
+func _draw_pass() -> void:
+	var b := serve_btn
+	var r := Rect2(Vector2.ZERO, b.size)
+	var on: bool = W.get("area", "") == "pass"
+	b.draw_style_box(_sb(Color("b9bdbb"), Color(0, 0, 0, 0), 0, 8), Rect2(0, 4, r.size.x, r.size.y - 4))
+	b.draw_style_box(_sb(Color("dfe2e0"), Color(0, 0, 0, 0), 0, 8), Rect2(0, 0, r.size.x, r.size.y - 8))
+	b.draw_rect(Rect2(10, 6, r.size.x - 20, 2), Color(1, 1, 1, 0.8))
+	var pp := g.passed_plates() if g != null else []
+	var tex := D.art("plate")
+	var step := minf(52.0, (r.size.x - 66.0) / maxf(1, pp.size()))
+	for k in pp.size():
+		var c := Vector2(30 + k * step, 26)
+		b.draw_texture_rect(tex, Rect2(c - Vector2(24, 24 * tex.get_size().y / tex.get_size().x), Vector2(48, 48 * tex.get_size().y / tex.get_size().x)), false)
+	if on: b.draw_style_box(_sb(Color(0, 0, 0, 0), D.C_ACCENT, 3, 8), r)
+	elif b.is_hovered(): b.draw_style_box(_sb(Color(0, 0, 0, 0), Color(D.C_ACCENT, 0.5), 2, 8), r)
+
+
+func render_pass() -> void:
+	if not is_instance_valid(serve_btn): return
+	clear(serve_btn)
+	serve_btn.queue_redraw()
+	var pp := g.passed_plates()
+	var names := []
+	var step := minf(52.0, (serve_btn.size.x - 66.0) / maxf(1, pp.size()))
+	for k in pp.size():
+		var its := g.plate_items(pp[k])
+		names.append(g.dish_info(its).name)
+		var n := mini(3, its.size())
+		for j in n:
+			var a := float(j) / n * TAU - 1.6
+			var q := Vector2(30 + k * step, 26) + (Vector2(cos(a), sin(a)) * 8.0 if n > 1 else Vector2.ZERO) - Vector2(11, 11)
+			var e := emo(its[j].id, 22)
+			place(e, q.x, q.y, 22, 22)
+			e.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			serve_btn.add_child(e)
+	var bi := ico("bell", 26, D.C_INK if pp.size() else D.C_MUTE)
+	place(bi, serve_btn.size.x - 40, 14)
+	bi.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	serve_btn.add_child(bi)
+	serve_btn.tooltip_text = "패스" if names.is_empty() else "\n".join(names)
 
 
 func work_go() -> void:
@@ -1427,6 +1590,7 @@ func render_all() -> void:
 	if g == null or not is_instance_valid(board): return
 	update_clock()
 	render_counter()
+	render_pass()
 	render_work()
 	update_stations()
 	render_top_btns()
@@ -1512,9 +1676,14 @@ func render_counter() -> void:
 	# 뒷줄 날재료, 앞줄 손질(유리 볼) / 익힘(접시). 손질 중인 재료는 도마 위
 	var on_board: int = W.get("uid", -1) if W.get("area", "") == "board" else -1
 	var rows := [[], []]
-	for it in g.items:
-		if it.where == null and it.plate == null and it.uid != on_board: rows[0 if _dish(it) == "" else 1].append(it)
-	for pl in g.plates: rows[1].push_front({"plate": pl.pid})
+	var comp_rep := {}    # 덩어리 대표 uid -> 재료들
+	for gr in _counter_groups():
+		if gr.size() > 1:
+			comp_rep[gr[0].uid] = gr
+			rows[1].append(gr[0])
+		elif gr[0].uid != on_board: rows[0 if _dish(gr[0]) == "" else 1].append(gr[0])
+	var board_plates: Array = g.plates.filter(func(p): return not p.pass)
+	for pl in board_plates: rows[1].push_front({"plate": pl.pid})
 	var pos := {}
 	for ri in 2:
 		var n: int = rows[ri].size()
@@ -1522,11 +1691,13 @@ func render_counter() -> void:
 		for k in n:
 			var key = rows[ri][k].get("plate", null)
 			pos["p%d" % key if key != null else rows[ri][k].uid] = Vector2(k * step, ri * (board.size.y - chh))
-	for pl in g.plates: _plate_token(pl, pos["p%d" % pl.pid], cw, chh)
+	for pl in board_plates: _plate_token(pl, pos["p%d" % pl.pid], cw, chh)
+	for u in comp_rep: _comp_token(comp_rep[u], pos[u], cw, chh)
 	var bd: Rect2 = LAYOUT.board
 	for i in g.items.size():
 		var it: Dictionary = g.items[i]
 		if it.where != null or it.plate != null: continue    # 기구 안이나 조립 접시에 있으면 거기서 보임
+		if g.siblings(it).size() > 1: continue               # 덩어리는 따로 그린다
 		var d := g.doneness(it)
 		var sel: bool = (W.get("area", "") == "board" and W.get("uid", -1) == it.uid) or W.get("picks", []).has(it.uid)
 		var away = it.where != null
@@ -1540,7 +1711,8 @@ func render_counter() -> void:
 		b.draw.connect(_draw_token.bind(b, it))
 		b.mouse_entered.connect(b.queue_redraw)
 		b.mouse_exited.connect(b.queue_redraw)
-		var tip := "%s  %s" % [D.ING[it.id].n, d.label]
+		var part_n: String = _group_name([it])
+		var tip := "%s  %s" % [part_n, d.label]
 		var lift := -4.0 if sel else 0.0
 		var e := emo(it.id, 40)
 		place(e, (cw - 40) / 2, 4 + lift, 40, 40)
@@ -1573,10 +1745,56 @@ func render_counter() -> void:
 		item_cards[it.uid] = b
 
 
+# 함께 조리한 덩어리: 그릇 하나에 재료가 함께 담겨 있다
+func _comp_token(gr: Array, p: Vector2, cw: float, chh: float) -> void:
+	var b := Button.new()
+	b.theme_type_variation = "Flat"
+	b.focus_mode = Control.FOCUS_NONE
+	b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	place(b, p.x, p.y, cw, chh)
+	var picked: bool = W.picks.has(gr[0].uid) if W.has("picks") else false
+	var sel: bool = picked or (W.get("area", "") == "comp" and gr.any(func(o): return o.uid == W.get("uid", -1)))
+	var tex_n := "bowl" if g.primary(gr[0]) in ["boil", "steam"] else "plate"
+	b.draw.connect(func():
+		var tex := D.art(tex_n)
+		var dw := 62.0
+		var dh := dw * tex.get_size().y / tex.get_size().x
+		var dc := Vector2(cw / 2, 28)
+		b.draw_set_transform(dc + Vector2(0, dh * 0.42), 0, Vector2(1, 0.3))
+		b.draw_circle(Vector2.ZERO, dw * 0.42, Color(0.3, 0.18, 0.06, 0.2))
+		b.draw_set_transform(Vector2.ZERO)
+		b.draw_texture_rect(tex, Rect2(dc - Vector2(dw, dh) / 2, Vector2(dw, dh)), false)
+		if sel: b.draw_arc(dc, dw * 0.55, 0, TAU, 40, D.C_ACCENT, 3.0, true)
+		elif b.is_hovered(): b.draw_arc(dc, dw * 0.55, 0, TAU, 40, Color(D.C_ACCENT, 0.5), 2.0, true))
+	b.mouse_entered.connect(b.queue_redraw)
+	b.mouse_exited.connect(b.queue_redraw)
+	var n := mini(4, gr.size())
+	for k in n:
+		var a := float(k) / n * TAU - 1.6
+		var e := emo(gr[k].id, 24)
+		var q := Vector2(cw / 2, 28) + Vector2(cos(a), sin(a)) * 11.0 - Vector2(12, 12)
+		place(e, q.x, q.y, 24, 24)
+		b.add_child(e)
+	var bar := panel(Color(0.4, 0.28, 0.12, 0.15), Color(0, 0, 0, 0), 0, 2)
+	place(bar, cw / 2 - 16, 60, 32, 4)
+	b.add_child(bar)
+	var d := g.doneness(gr[0])
+	var fill := panel(D.DCOL[d.cls], Color(0, 0, 0, 0), 0, 2)
+	place(fill, 0, 0, 32.0 * D.DW[d.cls] / 100.0, 4)
+	bar.add_child(fill)
+	b.set_meta("fill", fill)
+	b.set_meta("rep", gr[0].uid)
+	b.tooltip_text = _group_name(gr)
+	b.pressed.connect(open_item.bind(gr[0].uid))
+	board.add_child(b)
+	for o in gr: item_cards[o.uid] = b
+
+
 func refresh_bars() -> void:
 	for it in g.items:
 		if not item_cards.has(it.uid): continue
 		var b: Button = item_cards[it.uid]
+		if b.has_meta("rep") and b.get_meta("rep") != it.uid: continue
 		var d := g.doneness(it)
 		var fill: Panel = b.get_meta("fill")
 		fill.size.x = 32.0 * D.DW[d.cls] / 100.0
@@ -2003,157 +2221,62 @@ func _chip(icons: Array, text: String, col: Color, tip: String) -> Control:
 
 
 # ---------- 제출 ----------
-var serve_pick := {}
-
-
-func open_serve() -> void:
-	if busy or screen != "play": return
-	serve_pick.clear()
-	for it in g.items:
-		if it.where == null and (g.plates.is_empty() or it.plate != null): serve_pick[it.uid] = true
-	screen = "modal"
-	modal_kind = "serve"
-	_draw_serve()
-
-
-func _draw_serve() -> void:
-	var pv := mod_box(760, 14)
-	var p: PanelContainer = pv[0]
-	var v: VBoxContainer = pv[1]
-	var h := hbox(10)
-	h.add_child(_tipico("cloche", "접시 없이 고른 재료는 한 접시로", D.C_INK, 30))
-	h.add_child(lbl("플레이팅", 24, D.C_INK, D.F_BL))
-	v.add_child(h)
-	var grid := GridContainer.new()
-	grid.columns = 6
-	grid.add_theme_constant_override("h_separation", 8)
-	grid.add_theme_constant_override("v_separation", 8)
-	for pl in g.plates:
-		var pits := g.plate_items(pl)
-		var pon: bool = pl.uids.all(func(u): return serve_pick.has(u))
-		var pbt := _serve_spot(pits.map(func(i): return i.id), pon, false, g.dish_name(pits))
-		var puids: Array = pl.uids.duplicate()
-		pbt.pressed.connect(func():
-			for u in puids:
-				if pon: serve_pick.erase(u)
-				else: serve_pick[u] = true
-			sfx("click"); _draw_serve())
-		grid.add_child(pbt)
-	for it in g.items:
-		if it.plate != null: continue
-		var on := serve_pick.has(it.uid)
-		var away = it.where != null
-		var d := g.doneness(it)
-		var b := _serve_spot([it.id], on, away, "%s  %s" % [D.ING[it.id].n, d.label])
-		var bar := panel(D.C_PAPER2, Color(0, 0, 0, 0), 0, 2); place(bar, 26, 92, 60, 5); b.add_child(bar)
-		var fill := panel(D.DCOL[d.cls], Color(0, 0, 0, 0), 0, 2); place(fill, 0, 0, 60.0 * D.DW[d.cls] / 100.0, 5); bar.add_child(fill)
-		var u: int = it.uid
-		b.pressed.connect(func():
-			if serve_pick.has(u): serve_pick.erase(u)
-			else: serve_pick[u] = true
-			sfx("click"); _draw_serve())
-		grid.add_child(b)
-	v.add_child(grid)
-	var busy_apps := D.APPS.filter(func(a): return g.apps[a.id].s != null and g.apps[a.id].s.items.size() > 0)
-	if busy_apps.size():
-		var info := _minfo()
-		info.get_child(0).add_child(ico("warn", 20, D.C_WARN))
-		for a in busy_apps: info.get_child(0).add_child(_tipico(a.ic, "%s 조리 중" % a.n, D.C_WARN, 22))
-		v.add_child(info)
-	var hb := hbox(10)
-	hb.add_child(spacer())
-	var c := btn("x", "", "", "Ghost", Vector2(56, 46), 18)
-	c.tooltip_text = "닫기 Esc"
-	c.pressed.connect(close_modal)
-	hb.add_child(c)
-	var ok := btn("cloche", "제출", "1:00", "", Vector2(0, 46), 18)
-	dis(ok, serve_pick.is_empty())
-	ok.pressed.connect(func():
-		var list := serve_pick.keys()
-		close_ov(); screen = "play"
-		var tgt := Vector2(640, 360)
-		for u in list:
-			if item_cards.has(u): fly(g.get_item(u).id, item_cards[u].global_position + item_cards[u].size / 2, FLOOR.get_center())
-		act(60, "cloche", func(): serve(list)))
-	hb.add_child(ok)
-	v.add_child(hb)
-	open_ov(p)
-
-
-# 패스 위에 놓인 접시 하나
-func _serve_spot(ids: Array, on: bool, off: bool, tip: String) -> Button:
-	var b := Button.new()
-	b.theme_type_variation = "Flat"
-	b.focus_mode = Control.FOCUS_NONE
-	b.mouse_default_cursor_shape = Control.CURSOR_ARROW if off else Control.CURSOR_POINTING_HAND
-	b.custom_minimum_size = Vector2(112, 102)
-	b.tooltip_text = tip
-	b.disabled = off
-	var c := Vector2(56, 46)
-	b.draw.connect(func():
-		var tex := D.art("plate")
-		var dw := 88.0
-		var dh := dw * tex.get_size().y / tex.get_size().x
-		b.draw_set_transform(c + Vector2(0, dh * 0.42), 0, Vector2(1, 0.3))
-		b.draw_circle(Vector2.ZERO, dw * 0.42, Color(0.3, 0.18, 0.06, 0.2))
-		b.draw_set_transform(Vector2.ZERO)
-		b.draw_texture_rect(tex, Rect2(c - Vector2(dw, dh) / 2, Vector2(dw, dh)), false, Color(1, 1, 1, 0.4 if off else 1.0))
-		if on: b.draw_arc(c, dw * 0.54, 0, TAU, 48, D.C_ACCENT, 3.0, true)
-		elif b.is_hovered() and not off: b.draw_arc(c, dw * 0.54, 0, TAU, 48, Color(D.C_ACCENT, 0.5), 2.0, true))
-	b.mouse_entered.connect(b.queue_redraw)
-	b.mouse_exited.connect(b.queue_redraw)
-	var n := mini(4, ids.size())
-	for k in n:
-		var a := float(k) / n * TAU - 1.6
-		var es := 48 if n == 1 else 32
-		var q := c + (Vector2(cos(a), sin(a)) * 15.0 if n > 1 else Vector2.ZERO) - Vector2(es, es) / 2
-		var e := emo(ids[k], es)
-		place(e, q.x, q.y, es, es)
-		if off: e.modulate.a = 0.4
-		b.add_child(e)
-	if on:
-		var ck := panel(D.C_ACCENT, D.C_ACCENT, 0, 11); place(ck, 88, 2, 22, 22)
-		var ci := ico("check", 16, Color.WHITE, 3.0); place(ci, 3, 3); ck.add_child(ci); b.add_child(ck)
-	return b
-
-
 func time_over() -> void:
 	if g.over: return
-	var uids := g.time_over_items()
+	var groups := g.time_over_groups()
 	g.events.clear()
 	toast("시간 종료", true)
 	sfx("buzz")
-	serve(uids)
+	serve(groups)
 
 
 # =====================================================================
 # 결과
 # =====================================================================
-func serve(uids: Array) -> void:
+var res_box: Control
+var res_dish: Label
+var res_sel := -1
+
+
+func serve(groups: Array) -> void:
 	if g.over and screen == "result": return
-	var R := g.serve(uids, _groups_for(uids))
+	var R := g.serve(groups)
+	res_sel = -1
 	screen = "result"
 	modal_kind = "result"
 	var res: Dictionary = R.res
 	var p := mod_panel(1220, 680)
 	# 왼쪽: 접시 (조립한 접시마다 따로)
-	var pls: Array = R.get("plates", [R.items])
+	var pls: Array = R.plates
 	var np := mini(3, pls.size())
 	var pd: float = 250.0 if np == 1 else (170.0 if np == 2 else 118.0)
 	var gap := 12.0
 	var x0 := 195.0 - (pd * np + gap * (np - 1)) / 2.0
 	var kk := 0
 	for pi in np:
-		var pits: Array = pls[pi]
-		var plate := Control.new()
+		var pits: Array = pls[pi].items
+		var plate := Button.new()
+		plate.theme_type_variation = "Flat"
+		plate.focus_mode = Control.FOCUS_NONE
 		place(plate, x0 + pi * (pd + gap), 24 + (250 - pd) / 2.0, pd, pd)
 		var hr := pd / 2.0
+		var this_i: int = pi
 		plate.draw.connect(func():
 			for k in 5: plate.draw_circle(Vector2(hr, hr + 4 + k), hr - 1 + k, Color(0.25, 0.17, 0.08, 0.05))
 			plate.draw_circle(Vector2(hr, hr), hr - 1, Color("dcdedc"))
 			plate.draw_circle(Vector2(hr, hr), hr - 3, Color.WHITE)
 			plate.draw_circle(Vector2(hr, hr), hr * 0.83, D.C_LINE)
-			plate.draw_circle(Vector2(hr, hr), hr * 0.82, Color("f8f8f6")))
+			plate.draw_circle(Vector2(hr, hr), hr * 0.82, Color("f8f8f6"))
+			if res_sel == this_i: plate.draw_arc(Vector2(hr, hr), hr - 1, 0, TAU, 64, D.C_ACCENT, 3.0, true))
+		plate.tooltip_text = pls[pi].name
+		if pls.size() > 1:
+			plate.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+			plate.pressed.connect(func():
+				res_sel = -1 if res_sel == this_i else this_i
+				sfx("click")
+				for c in plate.get_parent().get_children():
+					if c is Button: c.queue_redraw()
+				_show_result_rows(R, false))
 		p.add_child(plate)
 		var n := mini(8, pits.size())
 		var es: float = round(56.0 * pd / 250.0)
@@ -2161,6 +2284,7 @@ func serve(uids: Array) -> void:
 			var ang := float(k) / n * TAU - 1.2
 			var rr := hr * 0.43 if n > 1 else 0.0
 			var e := emo(pits[k].id, int(es))
+			e.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			var tp := Vector2(hr, hr) + Vector2(cos(ang), sin(ang)) * rr - Vector2(es, es) / 2
 			e.position = tp - Vector2(0, 160)
 			e.modulate.a = 0
@@ -2176,6 +2300,7 @@ func serve(uids: Array) -> void:
 	place(dish, 20, 282, 350, 70)
 	dish.vertical_alignment = VERTICAL_ALIGNMENT_TOP
 	p.add_child(dish)
+	res_dish = dish
 	var th := hbox(6)
 	th.alignment = BoxContainer.ALIGNMENT_CENTER
 	place(th, 20, 352, 350, 22)
@@ -2217,12 +2342,47 @@ func serve(uids: Array) -> void:
 	jd.add_child(lbl(Game.judge_line(res.total), 22, D.C_INK, D.F_BL))
 	p.add_child(jd)
 	var jl := ColorRect.new(); jl.color = Color("c6c9c7"); place(jl, rx, 78, 790, 2); p.add_child(jl)
-	var cy := 86.0
-	var bars := []
-	for c in res.cats:
+	res_box = Control.new()
+	res_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	place(res_box, rx, 86, 790, 580)
+	p.add_child(res_box)
+	var rb := btn("trophy", "랭킹", "", "", Vector2(0, 50), 20)
+	rb.tooltip_text = "Enter"
+	place(rb, 250, 530)
+	rb.pressed.connect(finish)
+	p.add_child(rb)
+	open_ov(p)
+	# 연출: 점수 올라감, 막대 차오름, 등급 도장
+	_show_result_rows(R, true)
+	var tw := create_tween()
+	tw.tween_method(func(v): q.text = str(int(v)), 0.0, float(res.total), 0.9).set_delay(0.3)
+	tw.tween_callback(func():
+		gp.scale = Vector2(2.4, 2.4); gp.modulate.a = 1.0; gp.rotation = -0.25
+		var t2 := gp.create_tween().set_parallel()
+		t2.tween_property(gp, "scale", Vector2.ONE, 0.22).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+		t2.tween_property(gp, "rotation", -0.06, 0.22)
+		sfx("thud"))
+	if res.total >= 80: sfx("fanfare")
+	elif res.total < 50: sfx("sad")
+	else: sfx("ding")
+	result_at = Time.get_ticks_msec()
+
+
+# 오른쪽 심사평. res_sel이 -1이면 전체, 아니면 그 접시.
+func _show_result_rows(R: Dictionary, animate: bool) -> void:
+	clear(res_box)
+	var cats: Array = R.res.cats
+	res_dish.text = R.dish
+	if res_sel >= 0:
+		var pl: Dictionary = R.plates[res_sel]
+		res_dish.text = pl.name
+		cats = pl.res.cats.duplicate()
+		if not R.res.get("leftover", {}).is_empty(): cats.append(R.res.leftover)
+	var cy := 0.0
+	for c in cats:
 		var row := Control.new()
 		row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		place(row, rx, cy, 790, 0)
+		place(row, 0, cy, 790, 0)
 		var cn := lbl(c.n, 16, D.C_INK if c.max else D.C_BAD, D.F_BL)
 		place(cn, 0, 4, 96, 24)
 		row.add_child(cn)
@@ -2241,9 +2401,10 @@ func serve(uids: Array) -> void:
 			var ratio: float = float(c.sc) / float(c.max)
 			var col := D.C_OK if ratio >= 0.8 else (D.C_WARN if ratio >= 0.5 else D.C_BAD)
 			var bf := panel(col, Color(0, 0, 0, 0), 0, 2)
-			place(bf, 0, 0, 0, 12)
+			place(bf, 0, 0, 0 if animate else 580 * ratio, 12)
 			bb.add_child(bf)
-			bars.append([bf, 580 * ratio])
+			if animate:
+				bf.create_tween().tween_property(bf, "size:x", 580 * ratio, 0.8).set_delay(0.35).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 			var notes: Array = c.notes.duplicate()
 			notes.sort_custom(func(x, y): return x.pts < y.pts)
 			for nt in notes.slice(0, 3):
@@ -2265,29 +2426,8 @@ func serve(uids: Array) -> void:
 			row.add_child(wl)
 		var sep := ColorRect.new(); sep.color = D.C_LINE; place(sep, 0, rh, 790, 2); row.add_child(sep)
 		row.size.y = rh + 2
-		p.add_child(row)
+		res_box.add_child(row)
 		cy += rh + 6
-	var rb := btn("trophy", "랭킹", "", "", Vector2(0, 50), 20)
-	rb.tooltip_text = "Enter"
-	place(rb, 250, 530)
-	rb.pressed.connect(finish)
-	p.add_child(rb)
-	open_ov(p)
-	# 연출: 점수 올라감, 막대 차오름, 등급 도장
-	var tw := create_tween()
-	tw.tween_method(func(v): q.text = str(int(v)), 0.0, float(res.total), 0.9).set_delay(0.3)
-	for b in bars:
-		b[0].create_tween().tween_property(b[0], "size:x", b[1], 0.8).set_delay(0.35).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-	tw.tween_callback(func():
-		gp.scale = Vector2(2.4, 2.4); gp.modulate.a = 1.0; gp.rotation = -0.25
-		var t2 := gp.create_tween().set_parallel()
-		t2.tween_property(gp, "scale", Vector2.ONE, 0.22).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
-		t2.tween_property(gp, "rotation", -0.06, 0.22)
-		sfx("thud"))
-	if res.total >= 80: sfx("fanfare")
-	elif res.total < 50: sfx("sad")
-	else: sfx("ding")
-	result_at = Time.get_ticks_msec()
 
 
 func finish() -> void:
@@ -2466,7 +2606,7 @@ func _input(e: InputEvent) -> void:
 		"modal":
 			if k == KEY_ESCAPE:
 				if modal_kind == "menu": close_menu()
-				elif modal_kind == "load" or modal_kind == "serve": close_modal()
+				elif modal_kind == "load": close_modal()
 				elif modal_kind.begins_with("note:"):
 					var back := modal_kind.substr(5)
 					close_ov(); screen = back
@@ -2597,7 +2737,7 @@ func autopilot() -> void:
 	g.fridge = ["pork", "mince", "shrimp", "squid", "egg", "cheese", "kimchi", "onion", "greenonion", "chili", "potato", "mushroom", "apple", "lemon", "rice", "ramen", "tteok", "fishcake"]
 	pk_icon.texture = D.emo("theme0"); pk_name.text = g.theme.n; pk_desc.text = g.theme.d
 	render_pick(true)
-	for id in ["kimchi", "pork", "onion", "greenonion", "tteok", "apple"]: toggle_pick(id)
+	for id in ["kimchi", "pork", "onion", "greenonion", "rice", "tteok"]: toggle_pick(id)
 	await _shot("02_pick")
 	begin_play()
 	await _shot("03_kitchen")
@@ -2622,13 +2762,13 @@ func autopilot() -> void:
 	await _shot("06b_wok")
 	work_go()
 	await get_tree().create_timer(1.6).timeout
-	# 전자레인지
+	# 전자레인지: 즉석밥
 	open_area("micro")
-	W.picks = [g.items[2].uid]
+	W.picks = [g.items[4].uid]
 	render_all()
 	work_go()
 	await get_tree().create_timer(1.6).timeout
-	for step in [["s3", "steamer", "water", "steam", 4], ["s4", "fryer", "deep", "fry", -1], ["oven", "", "", "", 5], ["freeze", "", "", "", 3]]:
+	for step in [["s3", "steamer", "water", "steam", 2], ["s4", "fryer", "deep", "fry", -1], ["oven", "", "", "", 5], ["freeze", "", "", "", 3]]:
 		open_area(step[0])
 		if step[1] != "": W.tool = step[1]; W.prep = step[2]; W.method = step[3]
 		W.picks = [g.items[step[4]].uid] if step[4] >= 0 else []
@@ -2644,7 +2784,7 @@ func autopilot() -> void:
 	open_board()
 	await _shot("07c_board")
 	close_work()
-	do_plate(g.items[2].uid, -1)
+	do_plate(g.items[4].uid, -1)
 	await get_tree().create_timer(1.2).timeout
 	await _shot("07d_plate")
 	close_work()
@@ -2660,25 +2800,35 @@ func autopilot() -> void:
 	await get_tree().create_timer(2.0).timeout
 	_wait_next()
 	await get_tree().create_timer(2.0).timeout
-	for u in [g.items[0].uid, g.items[1].uid]:
-		var it = g.get_item(u)
-		if it != null and it.where == null:
-			do_plate(u, 1)
-			await get_tree().create_timer(1.0).timeout
-	if g.items.size() > 4 and g.items[4].where == null:
-		do_plate(g.items[4].uid, -1)
-		await get_tree().create_timer(1.0).timeout
+	# 김치와 돼지고기를 한 냄비에: 덩어리째 밥 접시로
+	await _shot("08b_comp")
+	open_item(g.items[0].uid)
+	await _shot("08c_comp_panel")
+	do_plate(g.items[0].uid, g.plates[0].pid)
+	await get_tree().create_timer(1.2).timeout
+	await _shot("08d_assembled")
+	print("DISH ", g.dish_info(g.plate_items(g.plates[0])).name)
+	var tt = g.items.filter(func(i): return i.id == "tteok")[0]
+	if tt.where != null:
+		take_back(tt.where)
+		await get_tree().create_timer(1.2).timeout
+	do_plate(tt.uid, -1)
+	await get_tree().create_timer(1.2).timeout
 	close_work()
-	await _shot("08c_plates")
-	open_serve()
-	await _shot("09_serve")
-	for it in g.items:
-		if it.where == null and it.plate == null and it.id == "tteok": serve_pick[it.uid] = true
-	var list := serve_pick.keys()
-	close_ov(); screen = "play"
-	act(60, "cloche", func(): serve(list))
+	for pl in g.plates.duplicate():
+		send_plate(pl.pid)
+		await get_tree().create_timer(1.2).timeout
+	await _shot("09_pass")
+	ring_bell()
 	await get_tree().create_timer(3.5).timeout
 	await _shot("10_result")
+	var plate_btn: Button = null
+	for c in ov.get_children():
+		for c2 in c.get_children():
+			if c2 is Button and c2.tooltip_text != "" and plate_btn == null and c2.tooltip_text != "Enter": plate_btn = c2
+	if plate_btn != null:
+		plate_btn.pressed.emit()
+		await _shot("10b_plate")
 	result_at = 0
 	finish()
 	await _shot("11_final")

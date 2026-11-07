@@ -1,0 +1,29 @@
+[
+  {
+    "id": "gosu",
+    "name": "농림수산식품교육문화정보원 고수요리법",
+    "license": "이용허락범위 제한 없음",
+    "url": "https://www.data.go.kr/data/15050910/fileData.do",
+    "file": "gosu.csv",
+    "bytes": 1103174,
+    "sha256": "b6786f46ab1632c7811e32465ce54bd348f9fd15cb849d203368277a6a069c3c"
+  },
+  {
+    "id": "eat",
+    "name": "한국농수산식품유통공사 eaT 공공급식 요리별 요리방법",
+    "license": "이용허락범위 제한 없음",
+    "url": "https://www.data.go.kr/data/15117929/fileData.do",
+    "file": "eat.csv",
+    "bytes": 6944,
+    "sha256": "0aab79a8b0a42a0d4a3031548c8dadc97dc8d81c309ffdae50df4b62c4f1e471"
+  },
+  {
+    "id": "hansik30",
+    "name": "한식진흥원 한식 정밀레시피(밥류)",
+    "license": "공공누리 제1유형(출처 표시)",
+    "url": "https://www.data.go.kr/data/15142529/fileData.do",
+    "file": "hansik30.zip",
+    "bytes": 1813610,
+    "sha256": "a508b5b504d197023f169a543c51f9e9226e06acf4124457043a6d19a209692f"
+  }
+]

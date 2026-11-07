@@ -1,0 +1,18 @@
+냉털 셰프 레시피 자료 출처
+
+요리 구성과 궁합 통계는 아래 공공데이터에서 뽑았습니다. 원문 조리법을 게임에 싣지는 않습니다.
+
+농림수산식품교육문화정보원 고수요리법
+  이용 조건: 이용허락범위 제한 없음
+  출처: https://www.data.go.kr/data/15050910/fileData.do
+
+한국농수산식품유통공사 eaT 공공급식 요리별 요리방법
+  이용 조건: 이용허락범위 제한 없음
+  출처: https://www.data.go.kr/data/15117929/fileData.do
+
+한식진흥원 한식 정밀레시피(밥류)
+  이용 조건: 공공누리 제1유형(출처 표시)
+  출처: https://www.data.go.kr/data/15142529/fileData.do
+
+USDA FSIS Safe Temperature Chart
+  https://www.fsis.usda.gov/food-safety/safe-food-handling-and-preparation/food-safety-basics/safe-temperature-chart

@@ -19,6 +19,11 @@ var KIND: Dictionary
 var VESSEL: Dictionary
 var VN: Dictionary
 var PRE_N: Dictionary
+var PARTS: Array = []
+var DISHES: Array = []
+var TEMPLATES: Array = []
+var PART_BY: Dictionary = {}
+const AROMA := ["onion", "garlic", "greenonion", "chili", "carrot"]
 
 var F_B: Font
 var F_XB: Font
@@ -53,6 +58,8 @@ func _init() -> void:
 	var J: Dictionary = JSON.parse_string(txt)
 	P = J.P; CUT = J.CUT; TAGN = J.TAGN; CATN = J.CATN; METH = J.METH; COOKM = J.COOKM; REFLV = J.REFLV
 	ING = J.ING; SEA = J.SEA; THEMES = J.THEMES; APPS = J.APPS; KIND = J.KIND; VESSEL = J.VESSEL; VN = J.VN; PRE_N = J.PRE_N
+	PARTS = J.get("PARTS", []); DISHES = J.get("DISHES", []); TEMPLATES = J.get("TEMPLATES", [])
+	for p in PARTS: PART_BY[p.id] = p
 	for k in J.CONDI: CONDI[k] = true
 	for k in J.GOOD: GOOD[k] = true
 	for k in J.BADX: BADX[k] = true
