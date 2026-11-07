@@ -160,11 +160,13 @@ func false_positive() -> void:
 func reachability() -> void:
 	seed(777)
 	var per := {}
+	var norice := 0
 	for i in 10000:
 		var ti := i % D.THEMES.size()
 		var g := Game.new("t", ti)
 		var th: Dictionary = D.THEMES[ti]
 		var rr := Game.reachable(g.fridge, th)
+		if not g.fridge.has("rice"): norice += 1
 		if not per.has(ti): per[ti] = {"min": 999, "fitmin": 999, "lo": 0, "n": 0, "sum": 0, "drink": 0}
 		per[ti].min = mini(per[ti].min, rr.all)
 		per[ti].fitmin = mini(per[ti].fitmin, rr.fit)
@@ -176,7 +178,8 @@ func reachability() -> void:
 		print("  ", D.THEMES[ti].n, " 최소=", per[ti].min, " 평균=", per[ti].sum / per[ti].n, " 주제맞음최소=", per[ti].fitmin, " 미달판=", per[ti].lo, " 음료없음=", per[ti].drink, "/", per[ti].n)
 	var bad := 0
 	for ti in per: bad += per[ti].lo + per[ti].drink
-	print("REACH 미달 총 ", bad, "/10000")
+	check(norice == 0, "즉석밥 없는 냉장고")
+	print("REACH 미달 총 ", bad, "/10000 즉석밥없음=", norice)
 
 
 # 판정은 맛으로만: 안전 규칙 문구와 추가 감점이 없어야 한다

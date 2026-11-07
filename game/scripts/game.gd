@@ -39,6 +39,7 @@ static func _shuf(a: Array) -> Array:
 
 
 # 냉장고는 레시피 근거가 있는 요리를 만들 수 있어야 한다.
+const ALWAYS := "rice"
 const MIN_REACH := 5
 const MIN_FIT := 3
 
@@ -93,6 +94,7 @@ func _roll_fridge(th: Dictionary) -> Array:
 	var ids: Array = D.ING.keys()
 	var pick: Array = []
 	for i in _shuf(ids.filter(func(x): return D.fit_of(th, D.ING[x]) >= 5)).slice(0, 6): pick.append(i)
+	if not pick.has(ALWAYS): pick.append(ALWAYS)    # 쌀밥 없는 한국 주방은 없다
 	var quota := {"meat": 2, "sea": 2, "dairy": 1, "veg": 4, "fruit": 2, "grain": 2}
 	for c in quota:
 		var have := pick.filter(func(x): return D.ING[x].cat == c).size()

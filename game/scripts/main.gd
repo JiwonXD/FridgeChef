@@ -678,14 +678,16 @@ func begin_play() -> void:
 # =====================================================================
 const FLOOR := Rect2(276, 273, 727, 447)
 const LAYOUT := {
-	"cooktop": Rect2(34, 26, 214, 210), "sink": Rect2(289, 52, 226, 146), "board": Rect2(554, 52, 192, 148), "work": Rect2(764, 30, 470, 196),
+	"cooktop": Rect2(34, 26, 214, 210), "sink": Rect2(289, 52, 226, 146), "tray": Rect2(549, 46, 204, 160), "board": Rect2(768, 60, 169, 130), "work": Rect2(948, 30, 318, 196),
 	"freeze": Rect2(32, 270, 206, 151), "bowl": Rect2(80, 490, 110, 110),
 	"oven": Rect2(1068, 246, 175, 163), "micro": Rect2(1072, 420, 168, 130), "blend": Rect2(1120, 578, 70, 92),
 	"s1": Rect2(51, 40, 84, 84), "s2": Rect2(147, 40, 84, 84), "s3": Rect2(51, 133, 84, 84), "s4": Rect2(147, 133, 84, 84)}
 const PANEL_Y := 390.0
+const BG_BOARD := Rect2(547, 45, 206, 160)   # 배경 그림 속 도마 자리 (도마를 옮겨 그릴 때 잘라 쓴다)
 
 var W := {}            # 작업 패널 상태. 비어 있으면 닫힘
 var board_st: Station
+var tray_btn: Button
 var menu_back := ""
 const SET_PATH := "user://settings.cfg"
 
@@ -709,6 +711,18 @@ func build_game() -> void:
 	cut_st.clicked.connect(func(_a): open_board())
 	r.add_child(cut_st)
 	board_st = cut_st
+	tray_btn = Button.new()
+	tray_btn.theme_type_variation = "Flat"
+	tray_btn.focus_mode = Control.FOCUS_NONE
+	tray_btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	tray_btn.tooltip_text = "쟁반"
+	var tr_r: Rect2 = LAYOUT.tray
+	place(tray_btn, tr_r.position.x, tr_r.position.y, tr_r.size.x, tr_r.size.y)
+	tray_btn.draw.connect(_draw_tray_btn)
+	tray_btn.mouse_entered.connect(tray_btn.queue_redraw)
+	tray_btn.mouse_exited.connect(tray_btn.queue_redraw)
+	tray_btn.pressed.connect(open_tray)
+	r.add_child(tray_btn)
 	# 작업대 (도마 위 재료)
 	var bd: Rect2 = LAYOUT.work
 	board = Control.new()
@@ -834,6 +848,8 @@ func _draw_kitchen(c: Control) -> void:
 	var bg := D.art("kitchen_bg")
 	if bg != null:
 		c.draw_texture_rect(bg, Rect2(0, 0, 1280, 720), false)
+		_draw_moved_board(c, bg)
+		_draw_tray(c)
 		return
 	var f := FLOOR
 	c.draw_texture_rect(D.art("floor"), Rect2(f.position.x, f.position.y, f.size.x, 720 - f.position.y), true)
@@ -867,6 +883,76 @@ func _draw_kitchen(c: Control) -> void:
 	var ct: Rect2 = LAYOUT.cooktop
 	c.draw_style_box(_sb(Color("1f1d1b"), Color(0, 0, 0, 0), 0, 16), ct)
 	c.draw_line(ct.position + Vector2(14, 3), Vector2(ct.end.x - 14, ct.position.y + 3), Color(1, 1, 1, 0.08), 2)
+
+
+# 배경에 그려진 도마를 오른쪽 자리로 옮겨 그린다
+func _draw_moved_board(c: Control, bg: Texture2D) -> void:
+	var bd: Rect2 = LAYOUT.board
+	var s := bd.size.x / 192.0
+	var src := BG_BOARD
+	var ts := bg.get_size()
+	var region := Rect2(src.position * ts / Vector2(1280, 720), src.size * ts / Vector2(1280, 720))
+	var dst := Rect2(bd.position - (Vector2(554, 52) - src.position) * s, src.size * s)
+	c.draw_texture_rect_region(bg, dst, region)
+
+
+# 조립용 나무 쟁반: 옛 도마 자리를 덮는다
+func _draw_tray(c: Control) -> void:
+	var r: Rect2 = LAYOUT.tray
+	for i in 4:
+		var gg := 2.0 + i * 2.0
+		c.draw_style_box(_sb(Color(0.25, 0.17, 0.08, 0.07), Color(0, 0, 0, 0), 0, 12 + int(gg)), Rect2(r.position + Vector2(-gg / 2, 3 + gg / 2), r.size + Vector2(gg, gg / 2)))
+	c.draw_style_box(_sb(Color("5d3a20"), Color(0, 0, 0, 0), 0, 12), r)
+	var top := Rect2(r.position, Vector2(r.size.x, r.size.y - 5))
+	c.draw_style_box(_sb(Color("7b4f2c"), Color(0, 0, 0, 0), 0, 12), top)
+	var inner := top.grow(-8)
+	c.draw_style_box(_sb(Color("94673d"), Color(0, 0, 0, 0), 0, 7), inner)
+	c.draw_rect(Rect2(inner.position.x + 6, inner.position.y, inner.size.x - 12, 2), Color(0.2, 0.1, 0.04, 0.3))
+	for k in 5:
+		var y := inner.position.y + 14 + k * (inner.size.y - 24) / 4.0
+		c.draw_line(Vector2(inner.position.x + 8, y), Vector2(inner.end.x - 8, y + 1), Color(0.3, 0.17, 0.08, 0.13), 1.0)
+
+
+func _draw_tray_btn() -> void:
+	var b := tray_btn
+	var r := Rect2(Vector2.ZERO, b.size)
+	if g != null and g.plates.filter(func(p): return not p.pass).is_empty():
+		var tex := D.art("plate")
+		var dw := 74.0
+		var dh := dw * tex.get_size().y / tex.get_size().x
+		b.draw_texture_rect(tex, Rect2(r.get_center() - Vector2(dw, dh) / 2, Vector2(dw, dh)), false, Color(1, 1, 1, 0.35))
+	if W.get("area", "") == "tray": b.draw_style_box(_sb(Color(0, 0, 0, 0), D.C_ACCENT, 3, 12), r)
+	elif b.is_hovered(): b.draw_style_box(_sb(Color(0, 0, 0, 0), Color(D.C_ACCENT, 0.55), 2, 12), r)
+
+
+func open_tray() -> void:
+	if busy or screen != "play": return
+	if W.get("area", "") == "tray":
+		close_work(); return
+	W = {"area": "tray", "picks": []}
+	sfx("pop")
+	render_all()
+
+
+func _work_tray(v: VBoxContainer) -> void:
+	_work_head(v, ico("cloche", 30, D.C_INK), "쟁반")
+	var plates_here: Array = g.plates.filter(func(p): return not p.pass)
+	if plates_here.size():
+		var h := _row(v, "cloche", "접시")
+		for pl in plates_here:
+			var pb := _plate_btn(pl)
+			pb.pressed.connect(open_plate.bind(pl.pid))
+			h.add_child(pb)
+	var h2 := _row(v, "plus", "새 접시에 담기")
+	var fl := HFlowContainer.new()
+	fl.add_theme_constant_override("h_separation", 6)
+	fl.add_theme_constant_override("v_separation", 6)
+	fl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	for gr in _counter_groups():
+		var b := _group_btn(gr, false, "%s 0:10" % _group_name(gr))
+		b.pressed.connect(do_plate.bind(gr[0].uid, -1))
+		fl.add_child(b)
+	h2.add_child(fl)
 
 
 func _rrect_pts(r: Rect2, rad: float) -> PackedVector2Array:
@@ -927,6 +1013,9 @@ func open_item(u: int) -> void:
 	if W.get("area", "") == "plate":
 		do_plate(u, W.pid)
 		return
+	if W.get("area", "") == "tray":
+		do_plate(u, -1)
+		return
 	if W.get("area", "") == "pass":
 		W = {}
 	if W.get("area", "") == "board" and W.get("uid", -1) == u:
@@ -984,6 +1073,7 @@ func render_work() -> void:
 	if area == "board": _work_board(v) if W.uid >= 0 else _work_board_pick(v)
 	elif area == "plate": _work_plate(v)
 	elif area == "comp": _work_comp(v)
+	elif area == "tray": _work_tray(v)
 	elif area == "pass": _work_pass(v)
 	elif area == "sink": _work_sink(v)
 	else:
@@ -1602,6 +1692,7 @@ func render_all() -> void:
 	if g == null or not is_instance_valid(board): return
 	update_clock()
 	render_counter()
+	if is_instance_valid(tray_btn): tray_btn.queue_redraw()
 	render_pass()
 	render_work()
 	update_stations()
@@ -1695,7 +1786,6 @@ func render_counter() -> void:
 			rows[1].append(gr[0])
 		elif gr[0].uid != on_board: rows[0 if _dish(gr[0]) == "" else 1].append(gr[0])
 	var board_plates: Array = g.plates.filter(func(p): return not p.pass)
-	for pl in board_plates: rows[1].push_front({"plate": pl.pid})
 	var pos := {}
 	for ri in 2:
 		var n: int = rows[ri].size()
@@ -1703,7 +1793,17 @@ func render_counter() -> void:
 		for k in n:
 			var key = rows[ri][k].get("plate", null)
 			pos["p%d" % key if key != null else rows[ri][k].uid] = Vector2(k * step, ri * (board.size.y - chh))
-	for pl in board_plates: _plate_token(pl, pos["p%d" % pl.pid], cw, chh)
+	var tr_in: Rect2 = LAYOUT.tray
+	var pn := board_plates.size()
+	var prows := 1 if pn <= 3 else 2
+	var pcols := int(ceil(float(pn) / prows))
+	for k in pn:
+		var col := k % pcols
+		var rw := k / pcols
+		var stepx := minf(cw + 2, (tr_in.size.x - 16 - cw) / maxf(1, pcols - 1))
+		var x0 := tr_in.position.x + (tr_in.size.x - (cw + stepx * (pcols - 1))) / 2.0
+		var y0 := tr_in.position.y + (tr_in.size.y - 6 - chh * prows) / 2.0
+		_plate_token(board_plates[k], Vector2(x0 + col * stepx, y0 + rw * chh) - board.position, cw, chh)
 	for u in comp_rep: _comp_token(comp_rep[u], pos[u], cw, chh)
 	var bd: Rect2 = LAYOUT.board
 	for i in g.items.size():
@@ -2813,6 +2913,9 @@ func autopilot() -> void:
 	await get_tree().create_timer(2.0).timeout
 	# 김치와 돼지고기를 한 냄비에: 덩어리째 밥 접시로
 	await _shot("08b_comp")
+	open_tray()
+	await _shot("08b2_tray")
+	close_work()
 	open_item(g.items[0].uid)
 	await _shot("08c_comp_panel")
 	do_plate(g.items[0].uid, g.plates[0].pid)
