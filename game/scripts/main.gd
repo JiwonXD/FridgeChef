@@ -1559,7 +1559,7 @@ func _work_plate(v: VBoxContainer) -> void:
 	h2.add_child(fl)
 	var f := hbox(10)
 	f.add_child(spacer())
-	var send := btn("bell", "", "0:10", "", Vector2(0, 40), 18)
+	var send := btn("next", "", "0:10", "", Vector2(0, 40), 18)
 	send.tooltip_text = "패스에 올리기"
 	send.pressed.connect(send_plate.bind(pl.pid))
 	f.add_child(send)
@@ -1594,7 +1594,7 @@ func _work_comp(v: VBoxContainer) -> void:
 		r3.add_child(pb)
 
 
-# ---------- 패스: 완성한 접시를 올리고 종을 친다 ----------
+# ---------- 패스: 완성한 접시를 올리고 탁상 벨을 누른다 ----------
 func open_pass() -> void:
 	if busy or screen != "play": return
 	if W.get("area", "") == "pass":
@@ -1618,7 +1618,7 @@ func send_plate(pid: int) -> void:
 func _work_pass(v: VBoxContainer) -> void:
 	_work_head(v, ico("bell", 28, D.C_INK), "패스")
 	var pp := g.passed_plates()
-	var h := _row(v, "bell", "패스 위 접시")
+	var h := _row(v, "cloche", "패스 위 접시")
 	for pl in pp:
 		var its := g.plate_items(pl)
 		var b := _group_btn(its, true, "%s 내리기" % g.dish_info(its).name)
@@ -1627,7 +1627,7 @@ func _work_pass(v: VBoxContainer) -> void:
 		h.add_child(b)
 	var rest: Array = g.plates.filter(func(p): return not p.pass)
 	if rest.size():
-		var h2 := _row(v, "cloche", "조리대 접시")
+		var h2 := _row(v, "next", "쟁반 접시")
 		for pl in rest:
 			var its := g.plate_items(pl)
 			var b := _group_btn(its, false, "%s 올리기 0:10" % g.dish_info(its).name)
@@ -1643,7 +1643,7 @@ func _work_pass(v: VBoxContainer) -> void:
 	if left.size(): f.add_child(_chip([ico("warn", 18, D.C_WARN)], str(left.size()), D.C_WARN, "패스에 없는 재료"))
 	f.add_child(spacer())
 	var bell := btn("bell", "", "1:00", "", Vector2(0, 46), 22)
-	bell.tooltip_text = "종 치기"
+	bell.tooltip_text = "벨 누르기"
 	dis(bell, pp.is_empty())
 	bell.pressed.connect(ring_bell)
 	f.add_child(bell)
