@@ -52,6 +52,7 @@ jobs:
       - name: Package
         run: |
           cp build/README.txt out/
+          cp "build/설명서.pdf" out/Manual.pdf
           cp -r build/licenses out/
           cd out && zip -qr ../FridgeChef-win64.zip .
 
